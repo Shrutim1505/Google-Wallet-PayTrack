@@ -15,7 +15,7 @@ Developed an intelligent receipt management system with AI/ML capabilities, enab
 - **Responsive UI:** Mobile-first design with dark/light mode and accessibility compliance.
 
 ## Tech Stack
-- **Frontend:** React 18, TypeScript, Tailwind CSS, Vite, Lucide React
+- **Frontend:** React.js, TypeScript, Tailwind CSS, Vite, Lucide React
 - **Backend:** Node.js, Express.js, Supabase, PostgreSQL, Firebase
 - **AI/ML:** Google Cloud Vision API, TensorFlow.js, NLP, Computer Vision
 - **Cloud & DevOps:** Google Cloud Platform, Vercel/Netlify, WebSocket, Cloud Storage
