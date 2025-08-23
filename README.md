@@ -1,4 +1,4 @@
-# AI-Powered Receipt Management System for Google Wallet
+# Google-Wallet-PayTrack
 
 ## Project Overview
 Developed an intelligent receipt management system with AI/ML capabilities, enabling users to scan, categorize, and track expenses seamlessly within Google Wallet. This system leverages OCR, predictive analytics, and real-time synchronization to optimize expense management and budgeting for Indian users.
