@@ -134,14 +134,7 @@ export const ReceiptUpload: React.FC<ReceiptUploadProps> = ({ onUpload, onClose,
             <div className="flex-1 border-t border-gray-300"></div>
           </div>
 
-          <button
-            onClick={handleCameraCapture}
-            disabled={uploading}
-            className={`w-full flex items-center justify-center px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            <Camera className="w-5 h-5 mr-2" />
-            Capture with Camera
-          </button>
+       
         </div>
 
         <div className="mt-6 p-4 bg-blue-50 rounded-lg">
