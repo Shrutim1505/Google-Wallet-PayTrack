@@ -11,6 +11,7 @@ import { Dashboard } from './components/Dashboard';
 import { useAuth } from './hooks/useAuth';
 import { useReceipts } from './hooks/useReceipts';
 import { formatCurrency } from './utils/currency';
+import { AuthForm } from './components/AuthForm';
 import { 
   Plus, 
   BarChart3, 
@@ -37,7 +38,7 @@ function App() {
     merchant: ''
   });
 
-  const { user, loading: authLoading, signInDemo, signOut } = useAuth();
+  const { user, loading: authLoading, isAuthenticated, logout } = useAuth();
   const { receipts, loading: receiptsLoading, uploading, handleUploadReceipt } = useReceipts();
 
   const filteredReceipts = useMemo(() => {
@@ -92,34 +93,14 @@ function App() {
     );
   }
 
-  // Show login screen if not authenticated
-  if (!user) {
+  // Show auth form if not authenticated
+  if (!isAuthenticated()) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center">
-        <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-2xl p-12 max-w-md w-full mx-4 border border-gray-100">
-          <div className="text-center">
-            <div className="w-20 h-20 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg">
-              <Wallet className="w-10 h-10 text-white" />
-            </div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent mb-2">
-              Receipt Manager
-            </h1>
-            <p className="text-gray-600 mb-8 text-lg">Smart receipt tracking for India</p>
-            
-            <button
-              onClick={signInDemo}
-              className="w-full flex items-center justify-center px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 font-semibold text-lg"
-            >
-              <LogIn className="w-5 h-5 mr-3" />
-              Continue with Demo
-            </button>
-            
-            <p className="text-sm text-gray-500 mt-6">
-              Demo mode - No registration required
-            </p>
-          </div>
-        </div>
-      </div>
+      <AuthForm 
+        onSuccess={() => {
+          window.location.reload();
+        }}
+      />
     );
   }
 
@@ -148,7 +129,7 @@ function App() {
                 <Settings className="w-5 h-5 text-gray-600 group-hover:text-blue-600" />
               </button>
               <button 
-                onClick={signOut}
+                onClick={logout}
                 className="p-2 hover:bg-red-50 rounded-xl transition-all duration-200 group"
                 title="Sign Out"
               >
