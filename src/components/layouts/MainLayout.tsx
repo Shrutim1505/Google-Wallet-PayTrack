@@ -5,14 +5,19 @@ import { DashboardStats } from '../features/Dashboard/DashboardStats';
 import { ReceiptUpload } from '../features/Receipts/ReceiptUpload';
 import { SearchAndFilter } from '../features/Receipts/SearchAndFilter';
 import { ReceiptModal } from '../features/Receipts/ReceiptModal';
+import { SpendingChart } from '../features/Analytics/SpendingChart';
+import { BudgetAlerts } from '../features/Analytics/BudgetAlerts';
+import { SettingsPage } from '../features/Settings/SettingsPage';
 import { useReceipts } from '../../hooks/useReceipts';
+import { useSettings } from '../../hooks/useSettings';
 import { FilterOptions, Receipt } from '../../types/receipt';
 
-type TabType = 'dashboard' | 'receipts' | 'analytics';
+type TabType = 'dashboard' | 'receipts' | 'analytics' | 'settings';
 
 export function MainLayout() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [showUpload, setShowUpload] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<FilterOptions>({
@@ -23,7 +28,8 @@ export function MainLayout() {
     merchant: '',
   });
 
-  const { receipts, handleUploadReceipt } = useReceipts();
+  const { receipts, handleUploadReceipt, updateReceipt, deleteReceipt } = useReceipts();
+  const { settings, saveSettings } = useSettings();
 
   const navigationItems = [
     { id: 'dashboard', label: 'Dashboard' },
@@ -37,10 +43,10 @@ export function MainLayout() {
 
   // Calculate stats
   const totalSpent = receipts.reduce((sum, r) => sum + r.amount, 0);
-  const monthlyBudget = 50000;
+  const monthlyBudget = settings.monthlyBudget;
   const budgetUsed = Math.round((totalSpent / monthlyBudget) * 100);
 
-  // Filter receipts based on search and filters
+  // Filter receipts
   const filteredReceipts = useMemo(() => {
     return receipts.filter((receipt) => {
       const matchesSearch =
@@ -70,7 +76,7 @@ export function MainLayout() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
-      <Header />
+      <Header onSettingsClick={() => setShowSettings(true)} />
       <Navigation 
         items={navigationItems} 
         activeTab={activeTab} 
@@ -196,18 +202,23 @@ export function MainLayout() {
         )}
 
         {activeTab === 'analytics' && (
-          <div className="space-y-6">
+          <div className="space-y-8">
             <div>
               <h2 className="text-3xl font-bold text-gray-900">Analytics</h2>
               <p className="text-gray-600 mt-1">Spending insights and trends</p>
             </div>
-            <div className="bg-white rounded-xl shadow-sm p-6">
-              <p className="text-gray-600">📊 Analytics dashboard coming soon...</p>
-            </div>
+
+            <BudgetAlerts 
+              totalSpent={totalSpent}
+              monthlyBudget={monthlyBudget}
+              budgetUsed={budgetUsed}
+            />
+
+            <SpendingChart receipts={receipts} />
           </div>
         )}
 
-        {/* Upload Modal */}
+        {/* Modals */}
         {showUpload && (
           <ReceiptUpload 
             onUpload={handleUploadReceipt}
@@ -215,11 +226,23 @@ export function MainLayout() {
           />
         )}
 
-        {/* Receipt Details Modal */}
         {selectedReceipt && (
           <ReceiptModal 
             receipt={selectedReceipt}
             onClose={() => setSelectedReceipt(null)}
+            onUpdate={(updated) => {
+              updateReceipt(updated.id, updated);
+              setSelectedReceipt(updated);
+            }}
+            onDelete={deleteReceipt}
+          />
+        )}
+
+        {showSettings && (
+          <SettingsPage 
+            settings={settings}
+            onSave={saveSettings}
+            onClose={() => setShowSettings(false)}
           />
         )}
       </main>
