@@ -1,68 +1,40 @@
 import { useState, useEffect } from 'react';
-import { authService, User, AuthResponse, LoginCredentials, RegisterCredentials } from '../lib/auth';
 
-export const useAuth = () => {
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+}
+
+export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const checkAuth = async () => {
+    // Check if user is in localStorage
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
       try {
-        setLoading(true);
-        const currentUser = authService.getCurrentUser();
-        setUser(currentUser);
+        setUser(JSON.parse(storedUser));
       } catch (error) {
-        console.error('Auth check error:', error);
-        setUser(null);
-      } finally {
-        setLoading(false);
+        console.error('Failed to parse user:', error);
+        localStorage.removeItem('user');
       }
-    };
-
-    checkAuth();
+    }
+    setLoading(false);
   }, []);
 
-  const login = async (credentials: LoginCredentials): Promise<AuthResponse> => {
-    try {
-      const response = await authService.login(credentials);
-      if (response.success && response.user) {
-        setUser(response.user);
-      }
-      return response;
-    } catch (error) {
-      console.error('Login hook error:', error);
-      return { success: false, error: 'Login failed' };
-    }
+  const isAuthenticated = () => {
+    // Check current state AND localStorage
+    const storedUser = localStorage.getItem('user');
+    return !!user || !!storedUser;
   };
 
-  const register = async (credentials: RegisterCredentials): Promise<AuthResponse> => {
-    try {
-      const response = await authService.register(credentials);
-      if (response.success && response.user) {
-        setUser(response.user);
-      }
-      return response;
-    } catch (error) {
-      console.error('Registration hook error:', error);
-      return { success: false, error: 'Registration failed' };
-    }
-  };
-
-  const logout = async () => {
-    await authService.logout();
+  const logout = () => {
+    localStorage.removeItem('user');
     setUser(null);
+    window.location.reload();
   };
 
-  const isAuthenticated = (): boolean => {
-    return authService.isAuthenticated();
-  };
-
-  return {
-    user,
-    loading,
-    login,
-    register,
-    logout,
-    isAuthenticated
-  };
-};
+  return { user, loading, isAuthenticated, logout };
+}

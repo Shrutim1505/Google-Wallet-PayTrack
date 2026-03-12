@@ -1,88 +1,69 @@
-import { useState, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { Receipt } from '../types/receipt';
-import { mockReceipts } from '../data/mockReceipts';
-import { useAuth } from './useAuth';
 
-export const useReceipts = () => {
-  const [receipts, setReceipts] = useState<Receipt[]>([]);
-  const [loading, setLoading] = useState(true);
+// Mock data
+const mockReceipts: Receipt[] = [
+  {
+    id: '1',
+    merchant: 'Whole Foods',
+    amount: 2500,
+    date: new Date().toISOString().split('T')[0], // Convert to string
+    category: 'Food',
+    items: [{ name: 'Groceries', price: 2500, quantity: 1 }],
+  },
+  {
+    id: '2',
+    merchant: 'Uber',
+    amount: 450,
+    date: new Date(Date.now() - 86400000).toISOString().split('T')[0],
+    category: 'Transport',
+    items: [{ name: 'Ride', price: 450, quantity: 1 }],
+  },
+];
+
+export function useReceipts() {
+  const [receipts, setReceipts] = useState<Receipt[]>(mockReceipts);
+  const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const { user } = useAuth();
 
-  useEffect(() => {
-    if (user) {
-      loadReceipts();
-    } else {
-      setReceipts([]);
-      setLoading(false);
-    }
-  }, [user]);
-
-  const loadReceipts = async () => {
+  const fetchReceipts = useCallback(async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Load mock receipts for demo
-      setReceipts(mockReceipts);
-    } catch (error) {
-      console.error('Error loading receipts:', error);
-      setReceipts([]);
+      // Simulate API call
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      // In real app, fetch from backend
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const handleUploadReceipt = async (file: File) => {
-    if (!user) return;
-
+  const handleUploadReceipt = useCallback(async (file: File): Promise<void> => {
+    setUploading(true);
     try {
-      setUploading(true);
-      
-      // Simulate processing time
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      // Create new receipt from uploaded file
+      // Simulate API call and OCR processing
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Create mock receipt from uploaded file
       const newReceipt: Receipt = {
         id: Date.now().toString(),
-        date: new Date().toISOString().split('T')[0],
-        merchant: 'Processed Receipt',
+        merchant: file.name.split('.')[0] || 'New Receipt',
         amount: Math.floor(Math.random() * 5000) + 100,
-        category: 'Groceries',
-        items: [
-          {
-            id: Date.now().toString(),
-            name: 'Processed Item',
-            quantity: 1,
-            price: Math.floor(Math.random() * 1000) + 50
-          }
-        ],
-        paymentMethod: 'UPI',
-        tax: Math.floor(Math.random() * 200) + 10,
-        verified: false,
-        tags: ['auto-processed'],
-        createdAt: new Date().toISOString(),
-        userId: user.id
+        date: new Date().toISOString().split('T')[0],
+        category: 'Uncategorized',
+        items: [{ name: 'Item 1', price: 100, quantity: 1 }],
       };
-      
-      // Add to receipts list
-      setReceipts(prev => [newReceipt, ...prev]);
-      
-      return newReceipt;
-    } catch (error) {
-      console.error('Error uploading receipt:', error);
-      throw error;
+
+      setReceipts((prev) => [newReceipt, ...prev]);
     } finally {
       setUploading(false);
     }
-  };
+  }, []);
 
   return {
     receipts,
     loading,
     uploading,
+    fetchReceipts,
     handleUploadReceipt,
-    loadReceipts
   };
-};
+}
