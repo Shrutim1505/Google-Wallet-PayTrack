@@ -2,7 +2,11 @@ import React from 'react';
 import { Wallet, Bell, Settings, LogOut, User } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
-export function Header() {
+interface HeaderProps {
+  onSettingsClick?: () => void;
+}
+
+export function Header({ onSettingsClick }: HeaderProps) {
   const { logout } = useAuth();
 
   return (
@@ -26,7 +30,10 @@ export function Header() {
               <Bell className="w-5 h-5 text-gray-600 group-hover:text-blue-600" />
               <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
             </button>
-            <button className="p-2 hover:bg-blue-50 rounded-xl transition-all duration-200 group">
+            <button 
+              onClick={onSettingsClick}
+              className="p-2 hover:bg-blue-50 rounded-xl transition-all duration-200 group"
+            >
               <Settings className="w-5 h-5 text-gray-600 group-hover:text-blue-600" />
             </button>
             <button 

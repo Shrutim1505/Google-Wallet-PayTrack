@@ -1,13 +1,13 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Receipt } from '../types/receipt';
+import { api } from '../services/api';
 
-// Mock data
 const mockReceipts: Receipt[] = [
   {
     id: '1',
     merchant: 'Whole Foods',
     amount: 2500,
-    date: new Date().toISOString().split('T')[0], // Convert to string
+    date: new Date().toISOString().split('T')[0],
     category: 'Food',
     items: [{ name: 'Groceries', price: 2500, quantity: 1 }],
   },
@@ -25,13 +25,21 @@ export function useReceipts() {
   const [receipts, setReceipts] = useState<Receipt[]>(mockReceipts);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchReceipts = useCallback(async () => {
     setLoading(true);
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      // In real app, fetch from backend
+      // Try to fetch from API, fallback to mock data
+      try {
+        const data = await api.getReceipts();
+        setReceipts(data.receipts || data);
+      } catch {
+        // Use mock data if API fails
+        setReceipts(mockReceipts);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch receipts');
     } finally {
       setLoading(false);
     }
@@ -40,30 +48,65 @@ export function useReceipts() {
   const handleUploadReceipt = useCallback(async (file: File): Promise<void> => {
     setUploading(true);
     try {
-      // Simulate API call and OCR processing
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      // Create mock receipt from uploaded file
-      const newReceipt: Receipt = {
-        id: Date.now().toString(),
-        merchant: file.name.split('.')[0] || 'New Receipt',
-        amount: Math.floor(Math.random() * 5000) + 100,
-        date: new Date().toISOString().split('T')[0],
-        category: 'Uncategorized',
-        items: [{ name: 'Item 1', price: 100, quantity: 1 }],
-      };
-
-      setReceipts((prev) => [newReceipt, ...prev]);
+      // Try API upload, fallback to mock
+      try {
+        await api.uploadReceipt(file);
+      } catch {
+        // Fallback: create mock receipt
+        const newReceipt: Receipt = {
+          id: Date.now().toString(),
+          merchant: file.name.split('.')[0] || 'New Receipt',
+          amount: Math.floor(Math.random() * 5000) + 100,
+          date: new Date().toISOString().split('T')[0],
+          category: 'Uncategorized',
+          items: [{ name: 'Item 1', price: 100, quantity: 1 }],
+        };
+        setReceipts((prev) => [newReceipt, ...prev]);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to upload receipt');
+      throw err;
     } finally {
       setUploading(false);
     }
   }, []);
 
+  const updateReceipt = useCallback(async (id: string, updates: Partial<Receipt>) => {
+    try {
+      await api.updateReceipt(id, updates);
+      setReceipts((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, ...updates } : r))
+      );
+    } catch (err) {
+      // Fallback: update locally
+      setReceipts((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, ...updates } : r))
+      );
+    }
+  }, []);
+
+  const deleteReceipt = useCallback(async (id: string) => {
+    try {
+      await api.deleteReceipt(id);
+      setReceipts((prev) => prev.filter((r) => r.id !== id));
+    } catch {
+      // Fallback: delete locally
+      setReceipts((prev) => prev.filter((r) => r.id !== id));
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchReceipts();
+  }, [fetchReceipts]);
+
   return {
     receipts,
     loading,
     uploading,
+    error,
     fetchReceipts,
     handleUploadReceipt,
+    updateReceipt,
+    deleteReceipt,
   };
 }
