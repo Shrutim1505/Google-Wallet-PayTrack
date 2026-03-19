@@ -8,22 +8,49 @@ interface AuthLayoutProps {
 export function AuthLayout({ onLoginSuccess }: AuthLayoutProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    const user = { id: '1', email, name: 'User' };
-    localStorage.setItem('user', JSON.stringify(user));
-    if (onLoginSuccess) {
-      onLoginSuccess();
+  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+  const login = async (loginEmail: string, loginPassword: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const resp = await fetch(`${apiBase}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+      });
+
+      const payload = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        throw new Error(payload?.error || payload?.message || 'Login failed');
+      }
+
+      // Express backend returns: { success: true, data: { user, token } }
+      const user = payload?.data?.user;
+      const token = payload?.data?.token;
+      if (!user || !token) throw new Error('Invalid login response');
+
+      localStorage.setItem('user', JSON.stringify(user));
+      localStorage.setItem('auth_token', token);
+
+      onLoginSuccess?.();
+    } catch (e: any) {
+      setError(e?.message || 'Login failed');
+    } finally {
+      setLoading(false);
     }
   };
 
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    login(email, password);
+  };
+
   const handleDemoLogin = () => {
-    const user = { id: '1', email: 'demo@example.com', name: 'Demo User' };
-    localStorage.setItem('user', JSON.stringify(user));
-    if (onLoginSuccess) {
-      onLoginSuccess();
-    }
+    login('demo@example.com', 'password');
   };
 
   return (
@@ -43,6 +70,11 @@ export function AuthLayout({ onLoginSuccess }: AuthLayoutProps) {
 
           {/* Form */}
           <form onSubmit={handleLogin} className="space-y-4">
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm">
+                {error}
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
               <input
@@ -52,6 +84,7 @@ export function AuthLayout({ onLoginSuccess }: AuthLayoutProps) {
                 placeholder="your@email.com"
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
+                disabled={loading}
               />
             </div>
 
@@ -64,21 +97,24 @@ export function AuthLayout({ onLoginSuccess }: AuthLayoutProps) {
                 placeholder="••••••••"
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 required
+                disabled={loading}
               />
             </div>
 
             <button
               type="submit"
-              className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium py-2 rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all"
+              disabled={loading}
+              className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium py-2 rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              Sign In
+            {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
 
           {/* Demo Button */}
           <button
             onClick={handleDemoLogin}
-            className="w-full mt-4 border-2 border-blue-600 text-blue-600 font-medium py-2 rounded-lg hover:bg-blue-50 transition-all"
+            disabled={loading}
+            className="w-full mt-4 border-2 border-blue-600 text-blue-600 font-medium py-2 rounded-lg hover:bg-blue-50 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
           >
             Demo Login
           </button>

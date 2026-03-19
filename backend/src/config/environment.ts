@@ -16,4 +16,8 @@ export const environment = {
   JWT_EXPIRY: process.env.JWT_EXPIRY || '7d',
   FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:5173',
   MAX_FILE_SIZE: parseInt(process.env.MAX_FILE_SIZE || '10485760', 10),
+  ALLOWED_FILE_TYPES: (process.env.ALLOWED_FILE_TYPES || 'image/jpeg,image/png,application/pdf')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
 };

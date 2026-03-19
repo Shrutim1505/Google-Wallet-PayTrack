@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "description": "Smart receipt management system backend",
   "type": "module",
-  "main": "dist/app.js",
+  "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx watch src/app.ts",
+    "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/app.js",
+    "start": "node dist/index.js",
     "lint": "eslint src --ext .ts",
     "test": "vitest"
   },

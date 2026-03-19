@@ -8,8 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "backend": "node backend/src/server.js",
-    "dev:full": "sh -c \"node backend/src/server.js & vite\""
+    "backend": "npm --prefix backend run dev",
+    "dev:full": "powershell -NoProfile -Command \"Start-Process npm -ArgumentList '--prefix','backend','run','dev' -NoNewWindow; npm run dev\""
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.53.0",

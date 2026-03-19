@@ -8,27 +8,23 @@ export class AuthService {
   async register(email: string, password: string, name: string) {
     const db = getDatabase();
 
-    const existingUser = await db.query(
-      'SELECT * FROM users WHERE email = $1',
-      [email]
-    );
-
-    if (existingUser.rows.length > 0) {
+    const existingUser = await db.get('SELECT id FROM users WHERE email = ?', [email]);
+    if (existingUser) {
       throw new Error('Email already registered');
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
     const userId = uuidv4();
 
-    await db.query(
-      'INSERT INTO users (id, email, name, passwordhash) VALUES ($1, $2, $3, $4)',
+    await db.run(
+      'INSERT INTO users (id, email, name, passwordhash) VALUES (?, ?, ?, ?)',
       [userId, email, name, passwordHash]
     );
 
     const token = jwt.sign(
-      { userId, email },
-      environment.JWT_SECRET as string,
-      { expiresIn: environment.JWT_EXPIRY }
+      { userId, email } as any,
+      environment.JWT_SECRET as any,
+      { expiresIn: environment.JWT_EXPIRY } as any
     );
 
     
@@ -42,16 +38,11 @@ export class AuthService {
   async login(email: string, password: string) {
     const db = getDatabase();
 
-    const result = await db.query(
-      'SELECT * FROM users WHERE email = $1',
-      [email]
-    );
-
-    if (result.rows.length === 0) {
+    const user = await db.get('SELECT * FROM users WHERE email = ?', [email]);
+    if (!user) {
       throw new Error('Invalid email or password');
     }
 
-    const user = result.rows[0];
     const isValid = await bcrypt.compare(password, user.passwordhash);
 
     if (!isValid) {
@@ -59,14 +50,15 @@ export class AuthService {
     }
 
     const token = jwt.sign(
-      { userId: user.id, email: user.email },
-      environment.JWT_SECRET as string,
-      { expiresIn: environment.JWT_EXPIRY }
+      { userId: user.id, email: user.email } as any,
+      environment.JWT_SECRET as any,
+      { expiresIn: environment.JWT_EXPIRY } as any
     );
 
     return {
       user: { id: user.id, email: user.email, name: user.name },
       token,
     };
+
   }
 }
