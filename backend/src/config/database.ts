@@ -16,10 +16,8 @@ export async function initializeDatabase() {
     driver: sqlite3.Database,
   });
 
-  // Make sure foreign keys work in SQLite.
   await db.exec(`PRAGMA foreign_keys = ON;`);
 
-  // Create tables (SQLite-friendly types).
   await db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -76,7 +74,6 @@ export async function initializeDatabase() {
     );
   `);
 
-  // Seed demo user (so your existing demo login works end-to-end).
   const demoEmail = 'demo@example.com';
   const demoPassword = 'password';
   const demoName = 'Demo User';
