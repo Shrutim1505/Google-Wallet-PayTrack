@@ -1,4 +1,3 @@
-// Currency formatting utilities for Indian Rupees
 export const formatCurrency = (amount: number): string => {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
@@ -15,7 +14,6 @@ export const formatAmount = (amount: number): string => {
   }).format(amount);
 };
 
-// Convert amount to Indian number format (lakhs, crores)
 export const formatIndianCurrency = (amount: number): string => {
   if (amount >= 10000000) { // 1 crore
     return `₹${(amount / 10000000).toFixed(2)} Cr`;
