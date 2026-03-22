@@ -1,55 +1,54 @@
 import { Request, Response } from 'express';
 import { AuthService } from '../services/authService.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
+import { logger } from '../utils/logger.js';
+import { AppError } from '../middleware/errorHandler.js';
+import { HTTP_STATUS } from '../utils/constants.js';
 
 const authService = new AuthService();
 
-export async function register(req: Request, res: Response) {
-  try {
-    const { email, password, name } = req.body;
+/**
+ * Register a new user
+ * POST /api/auth/register
+ */
+export const register = asyncHandler(async (req: Request, res: Response) => {
+  const { email, password, name } = req.body;
 
-    if (!email || !password || !name) {
-      return res.status(400).json({
-        success: false,
-        error: 'Email, password, and name are required',
-      });
-    }
+  // Validation is done by validateRequest middleware
+  const result = await authService.register(email, password, name);
 
-    const result = await authService.register(email, password, name);
+  logger.info({
+    message: 'User registered successfully',
+    email,
+    userId: result.user.id,
+  });
 
-    res.status(201).json({
-      success: true,
-      data: result,
-    });
-  } catch (error: any) {
-    res.status(400).json({
-      success: false,
-      error: error.message,
-    });
-  }
-}
+  res.status(HTTP_STATUS.CREATED).json({
+    success: true,
+    data: result,
+    message: 'Registration successful',
+  });
+});
 
-export async function login(req: Request, res: Response) {
-  try {
-    const { email, password } = req.body;
+/**
+ * Login user
+ * POST /api/auth/login
+ */
+export const login = asyncHandler(async (req: Request, res: Response) => {
+  const { email, password } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        error: 'Email and password are required',
-      });
-    }
+  // Validation is done by validateRequest middleware
+  const result = await authService.login(email, password);
 
-    const result = await authService.login(email, password);
+  logger.info({
+    message: 'User logged in successfully',
+    email,
+    userId: result.user.id,
+  });
 
-    // Store token in localStorage on frontend
-    res.json({
-      success: true,
-      data: result,
-    });
-  } catch (error: any) {
-    res.status(401).json({
-      success: false,
-      error: error.message,
-    });
-  }
-}
+  res.status(HTTP_STATUS.OK).json({
+    success: true,
+    data: result,
+    message: 'Login successful',
+  });
+});

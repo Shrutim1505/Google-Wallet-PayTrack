@@ -19,7 +19,6 @@ function AppContent() {
   ) : (
     <AuthLayout 
       onLoginSuccess={() => {
-        // Force re-render by updating state
         setRefresh((prev) => prev + 1);
       }}
     />

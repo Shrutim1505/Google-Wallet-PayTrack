@@ -1,19 +1,33 @@
 import { Request, Response } from 'express';
 import { AnalyticsService } from '../services/analyticsService.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
+import { logger } from '../utils/logger.js';
+import { HTTP_STATUS } from '../utils/constants.js';
 
 const analyticsService = new AnalyticsService();
 
-export async function getAnalytics(req: Request, res: Response) {
-  try {
-    const userId = (req as any).userId;
-    const analytics = await analyticsService.getAnalytics(userId);
+/**
+ * Get analytics dashboard data
+ * GET /api/analytics
+ */
+export const getAnalytics = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.userId!;
+  const year = parseInt(req.query.year as string) || new Date().getFullYear();
+  const month = parseInt(req.query.month as string) || new Date().getMonth() + 1;
 
-    res.json({
-      success: true,
-      data: analytics,
-    });
-  } catch (error: any) {
-    res.status(400).json({ success: false, error: error.message });
-  }
-}
+  const analytics = await analyticsService.getAnalytics(userId, year, month);
+
+  logger.info({
+    message: 'Analytics request',
+    userId,
+    year,
+    month,
+  });
+
+  res.status(HTTP_STATUS.OK).json({
+    success: true,
+    data: analytics,
+    message: 'Analytics data retrieved successfully',
+  });
+});
 

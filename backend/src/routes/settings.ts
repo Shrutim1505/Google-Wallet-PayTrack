@@ -1,12 +1,20 @@
 import { Router } from 'express';
-import { authMiddleware } from '../middleware/auth.js';
+import { authMiddleware, requireAuth } from '../middleware/auth.js';
+import { validateRequest } from '../middleware/validateRequest.js';
+import { schemas } from '../utils/validation.js';
 import * as settingsController from '../controllers/settingsController.js';
 
 const router = Router();
 
-router.use(authMiddleware);
+// Apply auth middleware to all settings routes
+router.use(authMiddleware, requireAuth);
+
 router.get('/', settingsController.getSettings);
-router.put('/', settingsController.updateSettings);
+router.put(
+  '/',
+  validateRequest(schemas.updateSettings, 'body'),
+  settingsController.updateSettings
+);
 
 export default router;
 
