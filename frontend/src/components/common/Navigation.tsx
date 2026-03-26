@@ -1,8 +1,8 @@
-import React from 'react';
-
 interface NavigationItem {
   id: string;
   label: string;
+  icon?: React.ReactNode;
+  badge?: number;
 }
 
 interface NavigationProps {
@@ -26,7 +26,13 @@ export function Navigation({ items, activeTab, onTabChange }: NavigationProps) {
                   : 'border-transparent text-gray-500 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50/30'
               }`}
             >
+              {item.icon && <span className="shrink-0">{item.icon}</span>}
               <span>{item.label}</span>
+              {item.badge !== undefined && item.badge > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 text-xs font-semibold bg-red-500 text-white rounded-full leading-none">
+                  {item.badge}
+                </span>
+              )}
             </button>
           ))}
         </div>

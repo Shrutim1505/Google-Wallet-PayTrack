@@ -9,9 +9,13 @@ import authRoutes from './routes/auth.js';
 import receiptRoutes from './routes/receipts.js';
 import settingsRoutes from './routes/settings.js';
 import analyticsRoutes from './routes/analytics.js';
+import featuresRoutes from './routes/features.js';
+import aiRoutes from './routes/ai.js';
+import walletRoutes from './routes/wallet.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { apiLimiter } from './middleware/rateLimitMiddleware.js';
 import { logger } from './utils/logger.js';
+import { getTotalConnections } from './config/websocket.js';
 import path from 'node:path';
 
 const app = express();
@@ -64,6 +68,7 @@ app.get('/health', (_req, res) => {
     timestamp: new Date().toISOString(),
     uptime: Math.floor(process.uptime()),
     environment: environment.NODE_ENV,
+    wsConnections: getTotalConnections(),
   });
 });
 
@@ -75,6 +80,9 @@ app.use('/api/auth', authRoutes);
 app.use('/api/receipts', receiptRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/features', featuresRoutes);
+app.use('/api/ai', aiRoutes);
+app.use('/api/wallet', walletRoutes);
 
 // ── 404 ──
 app.use((_req, res) => {

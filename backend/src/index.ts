@@ -3,9 +3,11 @@ dotenv.config();
 
 import fs from 'node:fs';
 import path from 'node:path';
+import http from 'node:http';
 
 import app from './app.js';
 import { initializeDatabase } from './config/database.js';
+import { initializeWebSocket, getTotalConnections } from './config/websocket.js';
 import { environment } from './config/environment.js';
 
 async function start() {
@@ -16,20 +18,26 @@ async function start() {
     await initializeDatabase();
     console.log('✅ Database ready');
 
-    const server = app.listen(environment.PORT, () => {
+    // Create HTTP server and attach Socket.IO
+    const httpServer = http.createServer(app);
+    initializeWebSocket(httpServer);
+    console.log('⚡ WebSocket server attached');
+
+    httpServer.listen(environment.PORT, () => {
       console.log(`🎉 Server running on http://localhost:${environment.PORT}`);
       console.log(`📱 Frontend: ${environment.FRONTEND_URL}`);
       console.log(`🔒 Environment: ${environment.NODE_ENV}`);
+      console.log(`⚡ Real-time: WebSocket enabled`);
     });
 
     // Graceful shutdown
     const shutdown = (signal: string) => {
       console.log(`\n⏳ ${signal} received. Shutting down gracefully...`);
-      server.close(() => {
+      console.log(`📊 Active WS connections: ${getTotalConnections()}`);
+      httpServer.close(() => {
         console.log('✅ Server closed');
         process.exit(0);
       });
-      // Force exit after 10s
       setTimeout(() => { console.error('❌ Forced shutdown'); process.exit(1); }, 10000);
     };
 

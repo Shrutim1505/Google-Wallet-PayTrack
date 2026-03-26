@@ -25,4 +25,10 @@ export const environment = {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),
+  GOOGLE_CLOUD_PROJECT_ID: process.env.GOOGLE_CLOUD_PROJECT_ID || '',
+  GOOGLE_CLOUD_KEY_FILE: process.env.GOOGLE_CLOUD_KEY_FILE || '',
+  GOOGLE_WALLET_ISSUER_ID: process.env.GOOGLE_WALLET_ISSUER_ID || '',
+  GOOGLE_WALLET_CALLBACK_URL: process.env.GOOGLE_WALLET_CALLBACK_URL || '',
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
+  EXCHANGE_RATE_API_URL: process.env.EXCHANGE_RATE_API_URL || 'https://open.er-api.com/v6/latest',
 };

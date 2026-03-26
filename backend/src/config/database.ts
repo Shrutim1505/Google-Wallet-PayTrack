@@ -85,6 +85,40 @@ export async function initializeDatabase() {
       createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS splits (
+      id TEXT PRIMARY KEY,
+      receiptId TEXT NOT NULL,
+      userId TEXT NOT NULL,
+      shareToken TEXT UNIQUE NOT NULL,
+      participants TEXT NOT NULL DEFAULT '[]',
+      splitType TEXT DEFAULT 'equal',
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(receiptId) REFERENCES receipts(id) ON DELETE CASCADE,
+      FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS smart_alerts (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      type TEXT NOT NULL,
+      message TEXT NOT NULL,
+      severity TEXT DEFAULT 'info',
+      data TEXT DEFAULT '{}',
+      isRead INTEGER DEFAULT 0,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS ml_training_data (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      merchant TEXT NOT NULL,
+      items TEXT DEFAULT '',
+      category TEXT NOT NULL,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
+    );
   `);
 
   // Indexes for scalability
@@ -95,6 +129,10 @@ export async function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_budgets_userId ON budgets(userId);
     CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token ON refresh_tokens(token);
     CREATE INDEX IF NOT EXISTS idx_refresh_tokens_userId ON refresh_tokens(userId);
+    CREATE INDEX IF NOT EXISTS idx_splits_shareToken ON splits(shareToken);
+    CREATE INDEX IF NOT EXISTS idx_splits_receiptId ON splits(receiptId);
+    CREATE INDEX IF NOT EXISTS idx_smart_alerts_userId ON smart_alerts(userId);
+    CREATE INDEX IF NOT EXISTS idx_ml_training_userId ON ml_training_data(userId);
   `);
 
   // Seed demo user

@@ -1,15 +1,20 @@
 import { Request, Response } from 'express';
 import { ReceiptService } from '../services/receiptService.js';
 import { CategorizationService } from '../services/categorizationService.js';
-import { OCRService } from '../services/octService.js';
+import { OCRService } from '../services/ocrService.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { HTTP_STATUS, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../utils/constants.js';
+import { SmartAlertService } from '../services/smartAlertService.js';
+import { MLService } from '../services/mlService.js';
+import { emitToUser } from '../config/websocket.js';
 
 const receiptService = new ReceiptService();
 const categorizationService = new CategorizationService();
 const ocrService = new OCRService();
+const smartAlertService = new SmartAlertService();
+const mlService = new MLService();
 
 function parseJsonArray(value: unknown) {
   if (!value) return [];
@@ -68,10 +73,23 @@ export const createReceipt = asyncHandler(async (req: Request, res: Response) =>
     isManualEntry: isManualEntry ?? true,
   });
 
+  // Fire-and-forget: smart alerts + ML training
+  const finalCategory = category || 'Other';
+  smartAlertService.analyzeNewReceipt(userId, finalMerchant, finalAmount, finalCategory).catch(() => {});
+  mlService.train(userId, finalMerchant, Array.isArray(items) ? items.map((i: any) => i.name || '') : [], finalCategory).catch(() => {});
+
   logger.info({ message: 'Receipt created', userId, receiptId: receipt.id });
 
+  const frontendReceipt = toFrontendReceipt(receipt);
+  emitToUser(userId, 'receipt:created', { receipt: frontendReceipt });
+
+  // Emit alerts in real-time too
+  smartAlertService.analyzeNewReceipt(userId, finalMerchant, finalAmount, finalCategory)
+    .then(alerts => { if (alerts.length) emitToUser(userId, 'alert:new', { alerts }); })
+    .catch(() => {});
+
   res.status(HTTP_STATUS.CREATED).json({
-    success: true, data: toFrontendReceipt(receipt), message: 'Receipt created successfully',
+    success: true, data: frontendReceipt, message: 'Receipt created successfully',
   });
 });
 
@@ -82,7 +100,17 @@ export const uploadReceipt = asyncHandler(async (req: Request, res: Response) =>
 
   const extracted = await ocrService.extractReceiptData(file.path);
   const merchant = extracted.vendor;
-  const finalCategory = req.body.category || categorizationService.categorizeReceipt(merchant);
+  
+  // Use ML prediction first, fall back to rule-based
+  let finalCategory = req.body.category;
+  if (!finalCategory) {
+    try {
+      const prediction = await mlService.predict(userId, merchant, extracted.items.map(i => i.name));
+      finalCategory = prediction.confidence > 0.3 ? prediction.category : categorizationService.categorizeReceipt(merchant);
+    } catch {
+      finalCategory = categorizationService.categorizeReceipt(merchant);
+    }
+  }
 
   const receipt = await receiptService.createReceipt(userId, {
     merchant, amount: extracted.amount,
@@ -92,10 +120,19 @@ export const uploadReceipt = asyncHandler(async (req: Request, res: Response) =>
     isManualEntry: false, tags: [], currency: 'INR',
   });
 
+  // Fire-and-forget: smart alerts + ML training
+  smartAlertService.analyzeNewReceipt(userId, merchant, extracted.amount, finalCategory)
+    .then(alerts => { if (alerts.length) emitToUser(userId, 'alert:new', { alerts }); })
+    .catch(() => {});
+  mlService.train(userId, merchant, extracted.items.map(i => i.name), finalCategory).catch(() => {});
+
   logger.info({ message: 'Receipt uploaded', userId, receiptId: receipt.id });
 
+  const frontendReceipt = toFrontendReceipt(receipt);
+  emitToUser(userId, 'receipt:created', { receipt: frontendReceipt });
+
   res.status(HTTP_STATUS.CREATED).json({
-    success: true, data: toFrontendReceipt(receipt), message: 'Receipt processed successfully',
+    success: true, data: frontendReceipt, message: 'Receipt processed successfully',
   });
 });
 
@@ -128,7 +165,10 @@ export const updateReceipt = asyncHandler(async (req: Request, res: Response) =>
 
   logger.info({ message: 'Receipt updated', userId, receiptId: req.params.id });
 
-  res.status(HTTP_STATUS.OK).json({ success: true, data: toFrontendReceipt(receipt), message: 'Receipt updated' });
+  const frontendReceipt = toFrontendReceipt(receipt);
+  emitToUser(userId, 'receipt:updated', { receipt: frontendReceipt });
+
+  res.status(HTTP_STATUS.OK).json({ success: true, data: frontendReceipt, message: 'Receipt updated' });
 });
 
 export const deleteReceipt = asyncHandler(async (req: Request, res: Response) => {
@@ -136,6 +176,8 @@ export const deleteReceipt = asyncHandler(async (req: Request, res: Response) =>
   await receiptService.deleteReceipt(userId, req.params.id);
 
   logger.info({ message: 'Receipt deleted', userId, receiptId: req.params.id });
+
+  emitToUser(userId, 'receipt:deleted', { receiptId: req.params.id });
 
   res.status(HTTP_STATUS.OK).json({ success: true, data: null, message: 'Receipt deleted' });
 });

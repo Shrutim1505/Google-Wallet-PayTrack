@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { NotificationProvider } from './context/NotificationContext';
+import { RealtimeProvider } from './context/RealtimeContext';
 import { MainLayout } from './components/layouts/MainLayout';
 import { AuthLayout } from './components/layouts/AuthLayout';
 import { useAuth } from './hooks/useAuth';
@@ -15,7 +16,9 @@ function AppContent() {
   }
 
   return isAuthenticated() ? (
-    <MainLayout />
+    <RealtimeProvider>
+      <MainLayout />
+    </RealtimeProvider>
   ) : (
     <AuthLayout 
       onLoginSuccess={() => {

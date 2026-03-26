@@ -213,6 +213,138 @@ export const api = {
       return extractPayload(response.data);
     } catch (error) { handleApiError(error); }
   },
+
+  getAIInsights: async () => {
+    try {
+      const response = await apiClient.get('/ai/insights');
+      return extractPayload(response.data);
+    } catch (error) { handleApiError(error); }
+  },
+
+  getAICategorize: async (merchant: string, items: string[]) => {
+    try {
+      const response = await apiClient.post('/ai/categorize', { merchant, items });
+      return extractPayload(response.data);
+    } catch (error) { handleApiError(error); }
+  },
+
+  syncToWallet: async (receiptId: string) => {
+    try {
+      const response = await apiClient.post(`/wallet/sync/${receiptId}`);
+      return extractPayload(response.data);
+    } catch (error) { handleApiError(error); }
+  },
+
+  getWalletStatus: async () => {
+    try {
+      const response = await apiClient.get('/wallet/status');
+      return extractPayload(response.data);
+    } catch (error) { handleApiError(error); }
+  },
+
+  // ── Recurring Expenses ──
+  getRecurring: async () => {
+    try {
+      const response = await apiClient.get('/features/recurring');
+      return extractPayload(response.data);
+    } catch (error) { handleApiError(error); }
+  },
+
+  // ── Split Expenses ──
+  createSplit: async (receiptId: string, participants: Array<{ name: string; amount: number; paid: boolean }>, splitType = 'equal') => {
+    try {
+      const response = await apiClient.post('/features/splits', { receiptId, participants, splitType });
+      return extractPayload(response.data);
+    } catch (error) { handleApiError(error); }
+  },
+
+  getUserSplits: async () => {
+    try {
+      const response = await apiClient.get('/features/splits');
+      return extractPayload(response.data);
+    } catch (error) { handleApiError(error); }
+  },
+
+  getSplitByToken: async (token: string) => {
+    try {
+      const response = await apiClient.get(`/features/splits/shared/${token}`);
+      return extractPayload(response.data);
+    } catch (error) { handleApiError(error); }
+  },
+
+  markSplitPaid: async (token: string, participantName: string) => {
+    try {
+      const response = await apiClient.post(`/features/splits/shared/${token}/pay`, { participantName });
+      return extractPayload(response.data);
+    } catch (error) { handleApiError(error); }
+  },
+
+  // ── Duplicate Detection ──
+  checkDuplicate: async (merchant: string, amount: number, date: string) => {
+    try {
+      const response = await apiClient.post('/features/duplicates/check', { merchant, amount, date });
+      return extractPayload(response.data);
+    } catch (error) { handleApiError(error); }
+  },
+
+  // ── Smart Alerts ──
+  getSmartAlerts: async () => {
+    try {
+      const response = await apiClient.get('/features/alerts');
+      return extractPayload(response.data);
+    } catch (error) { handleApiError(error); }
+  },
+
+  markAlertsRead: async (alertIds?: string[]) => {
+    try {
+      const response = await apiClient.post('/features/alerts/read', { alertIds });
+      return extractPayload(response.data);
+    } catch (error) { handleApiError(error); }
+  },
+
+  generateDigest: async () => {
+    try {
+      const response = await apiClient.post('/features/alerts/digest');
+      return extractPayload(response.data);
+    } catch (error) { handleApiError(error); }
+  },
+
+  // ── Currency ──
+  convertCurrency: async (amount: number, from: string, to: string) => {
+    try {
+      const response = await apiClient.post('/features/currency/convert', { amount, from, to });
+      return extractPayload(response.data);
+    } catch (error) { handleApiError(error); }
+  },
+
+  getExchangeRates: async (base = 'INR') => {
+    try {
+      const response = await apiClient.get(`/features/currency/rates?base=${base}`);
+      return extractPayload(response.data);
+    } catch (error) { handleApiError(error); }
+  },
+
+  // ── ML ──
+  mlPredict: async (merchant: string, items: string[] = []) => {
+    try {
+      const response = await apiClient.post('/features/ml/predict', { merchant, items });
+      return extractPayload(response.data);
+    } catch (error) { handleApiError(error); }
+  },
+
+  mlTrain: async (merchant: string, items: string[], category: string) => {
+    try {
+      const response = await apiClient.post('/features/ml/train', { merchant, items, category });
+      return extractPayload(response.data);
+    } catch (error) { handleApiError(error); }
+  },
+
+  mlStats: async () => {
+    try {
+      const response = await apiClient.get('/features/ml/stats');
+      return extractPayload(response.data);
+    } catch (error) { handleApiError(error); }
+  },
 };
 
 export default apiClient;

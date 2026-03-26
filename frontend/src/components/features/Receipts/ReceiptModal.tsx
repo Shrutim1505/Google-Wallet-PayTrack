@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { X, Edit2, Trash2, Download } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, Edit2, Trash2, Download, Wallet } from 'lucide-react';
 import { Receipt } from '../../../types/receipt';
 import { formatCurrency } from '../../../utils/currency';
+import { api } from '../../../services/api';
+import toast from 'react-hot-toast';
 
 interface ReceiptModalProps {
   receipt: Receipt;
@@ -13,6 +15,8 @@ interface ReceiptModalProps {
 export function ReceiptModal({ receipt, onClose, onUpdate, onDelete }: ReceiptModalProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedReceipt, setEditedReceipt] = useState<Receipt>(receipt);
+  const [walletSynced, setWalletSynced] = useState(false);
+  const [walletSyncing, setWalletSyncing] = useState(false);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -31,6 +35,19 @@ export function ReceiptModal({ receipt, onClose, onUpdate, onDelete }: ReceiptMo
     if (onDelete && window.confirm('Are you sure you want to delete this receipt?')) {
       onDelete(receipt.id);
       onClose();
+    }
+  };
+
+  const handleSyncToWallet = async () => {
+    setWalletSyncing(true);
+    try {
+      await api.syncToWallet(receipt.id);
+      setWalletSynced(true);
+      toast.success('Synced to Google Wallet!');
+    } catch {
+      toast.error('Failed to sync to Google Wallet');
+    } finally {
+      setWalletSyncing(false);
     }
   };
 
@@ -194,6 +211,14 @@ Total: ${formatCurrency(editedReceipt.amount)}
               >
                 <Download className="w-4 h-4" />
                 Export
+              </button>
+              <button
+                onClick={handleSyncToWallet}
+                disabled={walletSynced || walletSyncing}
+                className="flex items-center gap-2 px-4 py-2 border border-teal-300 text-teal-700 rounded-lg hover:bg-teal-50 disabled:opacity-50 transition-all"
+              >
+                <Wallet className="w-4 h-4" />
+                {walletSynced ? '✅ Synced' : walletSyncing ? 'Syncing...' : 'Sync to Wallet'}
               </button>
               <button
                 onClick={() => setIsEditing(true)}
