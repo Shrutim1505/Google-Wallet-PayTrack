@@ -9,7 +9,6 @@ export class SettingsService {
     );
 
     if (!row) {
-      // Default settings for new users.
       return { monthlyBudget: 50000, notificationsEnabled: 1, darkMode: 0 };
     }
 
@@ -23,9 +22,11 @@ export class SettingsService {
   async upsertUserSettings(userId: string, updates: any) {
     const db = getDatabase();
 
-    const monthlyBudget = Number(updates.monthlyBudget ?? 50000);
-    const notificationsEnabled = updates.notificationsEnabled ? 1 : 0;
-    const darkMode = updates.darkMode ? 1 : 0;
+    // Merge with existing settings so omitted fields aren't reset to defaults
+    const existing = await this.getUserSettings(userId);
+    const monthlyBudget = updates.monthlyBudget != null ? Number(updates.monthlyBudget) : existing.monthlyBudget;
+    const notificationsEnabled = updates.notificationsEnabled != null ? (updates.notificationsEnabled ? 1 : 0) : existing.notificationsEnabled;
+    const darkMode = updates.darkMode != null ? (updates.darkMode ? 1 : 0) : existing.darkMode;
 
     await db.run(
       `INSERT INTO user_settings (userId, monthlyBudget, notificationsEnabled, darkMode)
@@ -33,15 +34,11 @@ export class SettingsService {
        ON CONFLICT(userId) DO UPDATE SET
          monthlyBudget = excluded.monthlyBudget,
          notificationsEnabled = excluded.notificationsEnabled,
-         darkMode = excluded.darkMode`,
+         darkMode = excluded.darkMode,
+         updatedAt = CURRENT_TIMESTAMP`,
       [userId, monthlyBudget, notificationsEnabled, darkMode]
     );
 
-    return {
-      monthlyBudget,
-      notificationsEnabled,
-      darkMode,
-    };
+    return { monthlyBudget, notificationsEnabled, darkMode };
   }
 }
-

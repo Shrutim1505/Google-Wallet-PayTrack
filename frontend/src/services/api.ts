@@ -30,6 +30,22 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
+// Auto-logout on 401 responses (expired/invalid token)
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('user');
+      // Only reload if we were previously authenticated
+      if (localStorage.getItem('auth_token') === null) {
+        window.location.reload();
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 function extractPayload<T>(responseData: Envelope<T>): T {
   if (Array.isArray(responseData)) {
     return responseData as T;

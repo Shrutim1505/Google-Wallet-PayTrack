@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { isTokenExpired, removeTokenFromStorage } from '../lib/jwt';
 
 export interface User {
   id: string;
@@ -11,27 +12,32 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is in localStorage
+    const token = localStorage.getItem('auth_token');
     const storedUser = localStorage.getItem('user');
-    if (storedUser) {
+
+    if (token && storedUser && !isTokenExpired(token)) {
       try {
         setUser(JSON.parse(storedUser));
-      } catch (error) {
-        console.error('Failed to parse user:', error);
-        localStorage.removeItem('user');
+      } catch {
+        removeTokenFromStorage();
       }
+    } else if (token) {
+      // Token expired — clean up
+      removeTokenFromStorage();
     }
     setLoading(false);
   }, []);
 
   const isAuthenticated = () => {
-    // Check current state AND localStorage
-    const storedUser = localStorage.getItem('user');
-    return !!user || !!storedUser;
+    const token = localStorage.getItem('auth_token');
+    if (!token || isTokenExpired(token)) {
+      return false;
+    }
+    return !!user || !!localStorage.getItem('user');
   };
 
   const logout = () => {
-    localStorage.removeItem('user');
+    removeTokenFromStorage();
     setUser(null);
     window.location.reload();
   };

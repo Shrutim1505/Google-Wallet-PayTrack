@@ -1,4 +1,4 @@
-import React, { createContext, useContext, ReactNode } from "react";
+import React, { createContext, useContext, useCallback, ReactNode } from "react";
 
 interface Notification {
   id: string;
@@ -17,14 +17,16 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [notifications, setNotifications] = React.useState<Notification[]>([]);
 
-  const addNotification = (notification: Omit<Notification, "id">) => {
+  const removeNotification = useCallback((id: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  }, []);
+
+  const addNotification = useCallback((notification: Omit<Notification, "id">) => {
     const id = Date.now().toString();
     setNotifications((prev) => [...prev, { ...notification, id }]);
-  };
-
-  const removeNotification = (id: string) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
-  };
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => removeNotification(id), 5000);
+  }, [removeNotification]);
 
   return (
     <NotificationContext.Provider value={{ notifications, addNotification, removeNotification }}>
