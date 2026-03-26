@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { api } from '../services/api';
 
 export interface UserSettings {
@@ -24,10 +24,28 @@ export function useSettings() {
   });
   const [loading, setLoading] = useState(false);
 
+  const loadSettings = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data: any = await api.getSettings();
+      const loaded = data?.settings || defaultSettings;
+      setSettings(loaded);
+      localStorage.setItem('userSettings', JSON.stringify(loaded));
+    } catch {
+      // Use local settings if API fails
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Load from API on mount
+  useEffect(() => {
+    loadSettings();
+  }, [loadSettings]);
+
   const saveSettings = useCallback(async (newSettings: UserSettings) => {
     setLoading(true);
     try {
-      // Try API save
       try {
         await api.updateSettings(newSettings);
       } catch {
@@ -35,20 +53,6 @@ export function useSettings() {
       }
       setSettings(newSettings);
       localStorage.setItem('userSettings', JSON.stringify(newSettings));
-    } catch (err) {
-      console.error('Failed to save settings:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const loadSettings = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await api.getSettings();
-      setSettings(data.settings || defaultSettings);
-    } catch {
-      // Use local settings if API fails
     } finally {
       setLoading(false);
     }

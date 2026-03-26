@@ -1,36 +1,43 @@
 import { Request, Response } from 'express';
 import { ReceiptService } from '../services/receiptService.js';
 import { CategorizationService } from '../services/categorizationService.js';
-import { OCRService } from '../services/octService.js';
+import { OCRService } from '../services/ocrService.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { HTTP_STATUS, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../utils/constants.js';
+import { SmartAlertService } from '../services/smartAlertService.js';
+import { MLService } from '../services/mlService.js';
+import { emitToUser } from '../config/websocket.js';
 
 const receiptService = new ReceiptService();
 const categorizationService = new CategorizationService();
 const ocrService = new OCRService();
+const smartAlertService = new SmartAlertService();
+const mlService = new MLService();
 
-/**
- * Helper: Parse JSON string or array
- */
 function parseJsonArray(value: unknown) {
   if (!value) return [];
   if (Array.isArray(value)) return value;
   if (typeof value === 'string') {
-    try {
-      const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
+    try { const p = JSON.parse(value); return Array.isArray(p) ? p : []; } catch { return []; }
   }
   return [];
 }
 
-/**
- * Helper: Transform database receipt to frontend format
- */
+const CATEGORY_MAP: Record<string, string> = {
+  food: 'Food', dining: 'Food', groceries: 'Food',
+  transport: 'Transport', shopping: 'Shopping',
+  utilities: 'Bills', bills: 'Bills',
+  entertainment: 'Entertainment',
+  healthcare: 'Health', health: 'Health',
+  other: 'Other', personal: 'Other',
+};
+
+function normalizeCategory(category: unknown): string {
+  return CATEGORY_MAP[String(category ?? 'Other').trim().toLowerCase()] || 'Other';
+}
+
 function toFrontendReceipt(row: any) {
   return {
     id: String(row.id),
@@ -39,34 +46,12 @@ function toFrontendReceipt(row: any) {
     date: typeof row.date === 'string' ? row.date : new Date(row.date).toISOString().split('T')[0],
     category: normalizeCategory(row.category),
     items: parseJsonArray(row.items),
+    notes: row.notes || '',
+    imageUrl: row.imageUrl || '',
+    createdAt: row.createdAt,
   };
 }
 
-/**
- * Helper: Normalize category to standard values
- */
-function normalizeCategory(category: unknown): string {
-  const raw = String(category ?? 'Other').trim();
-  const normalized = raw.toLowerCase();
-
-  if (['food', 'transport', 'shopping', 'bills', 'entertainment', 'health', 'other'].includes(normalized)) {
-    return raw[0].toUpperCase() + raw.slice(1);
-  }
-
-  if (['food', 'dining', 'groceries'].includes(normalized)) return 'Food';
-  if (['transport'].includes(normalized)) return 'Transport';
-  if (['shopping'].includes(normalized)) return 'Shopping';
-  if (['utilities', 'bills'].includes(normalized)) return 'Bills';
-  if (['entertainment'].includes(normalized)) return 'Entertainment';
-  if (['healthcare', 'health', 'personal'].includes(normalized)) return normalized === 'personal' ? 'Other' : 'Health';
-
-  return 'Other';
-}
-
-/**
- * Create a new receipt (manual entry)
- * POST /api/receipts
- */
 export const createReceipt = asyncHandler(async (req: Request, res: Response) => {
   const userId = req.userId!;
   const { merchant, vendor, amount, date, category, items, notes, imageUrl, tags, isManualEntry } = req.body;
@@ -79,90 +64,78 @@ export const createReceipt = asyncHandler(async (req: Request, res: Response) =>
   }
 
   const receipt = await receiptService.createReceipt(userId, {
-    merchant: finalMerchant,
-    amount: finalAmount,
+    merchant: finalMerchant, amount: finalAmount,
     date: date || new Date().toISOString().split('T')[0],
     category: category || 'Other',
     items: Array.isArray(items) ? items : [],
-    notes: notes || '',
-    imageUrl: imageUrl || '',
+    notes: notes || '', imageUrl: imageUrl || '',
     tags: Array.isArray(tags) ? tags : [],
     isManualEntry: isManualEntry ?? true,
   });
 
-  logger.info({
-    message: 'Receipt created',
-    userId,
-    receiptId: receipt.id,
-    merchant: finalMerchant,
-  });
+  // Fire-and-forget: smart alerts + ML training
+  const finalCategory = category || 'Other';
+  smartAlertService.analyzeNewReceipt(userId, finalMerchant, finalAmount, finalCategory).catch(() => {});
+  mlService.train(userId, finalMerchant, Array.isArray(items) ? items.map((i: any) => i.name || '') : [], finalCategory).catch(() => {});
+
+  logger.info({ message: 'Receipt created', userId, receiptId: receipt.id });
+
+  const frontendReceipt = toFrontendReceipt(receipt);
+  emitToUser(userId, 'receipt:created', { receipt: frontendReceipt });
+
+  // Emit alerts in real-time too
+  smartAlertService.analyzeNewReceipt(userId, finalMerchant, finalAmount, finalCategory)
+    .then(alerts => { if (alerts.length) emitToUser(userId, 'alert:new', { alerts }); })
+    .catch(() => {});
 
   res.status(HTTP_STATUS.CREATED).json({
-    success: true,
-    data: toFrontendReceipt(receipt),
-    message: 'Receipt created successfully',
+    success: true, data: frontendReceipt, message: 'Receipt created successfully',
   });
 });
 
-/**
- * Upload and process receipt with OCR
- * POST /api/receipts/upload
- */
 export const uploadReceipt = asyncHandler(async (req: Request, res: Response) => {
   const userId = req.userId!;
   const file = req.file;
+  if (!file) throw new AppError(HTTP_STATUS.BAD_REQUEST, 'File upload is required');
 
-  if (!file) {
-    throw new AppError(HTTP_STATUS.BAD_REQUEST, 'File upload is required');
+  const extracted = await ocrService.extractReceiptData(file.path);
+  const merchant = extracted.vendor;
+  
+  // Use ML prediction first, fall back to rule-based
+  let finalCategory = req.body.category;
+  if (!finalCategory) {
+    try {
+      const prediction = await mlService.predict(userId, merchant, extracted.items.map(i => i.name));
+      finalCategory = prediction.confidence > 0.3 ? prediction.category : categorizationService.categorizeReceipt(merchant);
+    } catch {
+      finalCategory = categorizationService.categorizeReceipt(merchant);
+    }
   }
 
-  try {
-    // Extract data from receipt image via OCR
-    const extracted = await ocrService.extractReceiptData(file.path);
-    const merchant = extracted.vendor;
-    const finalCategory = req.body.category || categorizationService.categorizeReceipt(merchant);
+  const receipt = await receiptService.createReceipt(userId, {
+    merchant, amount: extracted.amount,
+    date: extracted.date instanceof Date ? extracted.date.toISOString().split('T')[0] : new Date(extracted.date).toISOString().split('T')[0],
+    category: finalCategory, items: extracted.items,
+    imageUrl: `/uploads/${file.filename}`, notes: req.body.notes || '',
+    isManualEntry: false, tags: [], currency: 'INR',
+  });
 
-    const receipt = await receiptService.createReceipt(userId, {
-      merchant,
-      amount: extracted.amount,
-      date: extracted.date instanceof Date 
-        ? extracted.date.toISOString().split('T')[0] 
-        : new Date(extracted.date).toISOString().split('T')[0],
-      category: finalCategory,
-      items: extracted.items,
-      imageUrl: `/uploads/${file.filename}`,
-      notes: req.body.notes || '',
-      isManualEntry: false,
-      tags: [],
-      currency: 'INR',
-    });
+  // Fire-and-forget: smart alerts + ML training
+  smartAlertService.analyzeNewReceipt(userId, merchant, extracted.amount, finalCategory)
+    .then(alerts => { if (alerts.length) emitToUser(userId, 'alert:new', { alerts }); })
+    .catch(() => {});
+  mlService.train(userId, merchant, extracted.items.map(i => i.name), finalCategory).catch(() => {});
 
-    logger.info({
-      message: 'Receipt uploaded and processed',
-      userId,
-      receiptId: receipt.id,
-      merchant,
-    });
+  logger.info({ message: 'Receipt uploaded', userId, receiptId: receipt.id });
 
-    res.status(HTTP_STATUS.CREATED).json({
-      success: true,
-      data: toFrontendReceipt(receipt),
-      message: 'Receipt processed successfully',
-    });
-  } catch (error: any) {
-    logger.error({
-      message: 'OCR processing failed',
-      error: error.message,
-      userId,
-    });
-    throw new AppError(HTTP_STATUS.BAD_REQUEST, `OCR processing failed: ${error.message}`);
-  }
+  const frontendReceipt = toFrontendReceipt(receipt);
+  emitToUser(userId, 'receipt:created', { receipt: frontendReceipt });
+
+  res.status(HTTP_STATUS.CREATED).json({
+    success: true, data: frontendReceipt, message: 'Receipt processed successfully',
+  });
 });
 
-/**
- * Get paginated list of receipts
- * GET /api/receipts
- */
 export const getReceipts = asyncHandler(async (req: Request, res: Response) => {
   const userId = req.userId!;
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
@@ -173,83 +146,59 @@ export const getReceipts = asyncHandler(async (req: Request, res: Response) => {
   res.status(HTTP_STATUS.OK).json({
     success: true,
     data: result.receipts.map(toFrontendReceipt),
-    pagination: {
-      page,
-      limit,
-      total: result.total,
-      hasMore: page * limit < result.total,
-    },
-    message: 'Receipts retrieved successfully',
+    pagination: { page, limit, total: result.total, hasMore: page * limit < result.total },
   });
 });
 
-/**
- * Get a single receipt by ID
- * GET /api/receipts/:id
- */
 export const getReceipt = asyncHandler(async (req: Request, res: Response) => {
   const userId = req.userId!;
-  const receiptId = req.params.id;
+  const receipt = await receiptService.getReceiptById(userId, req.params.id);
+  if (!receipt) throw new AppError(HTTP_STATUS.NOT_FOUND, 'Receipt not found');
 
-  const receipt = await receiptService.getReceiptById(userId, receiptId);
-
-  if (!receipt) {
-    throw new AppError(HTTP_STATUS.NOT_FOUND, 'Receipt not found');
-  }
-
-  res.status(HTTP_STATUS.OK).json({
-    success: true,
-    data: toFrontendReceipt(receipt),
-    message: 'Receipt retrieved successfully',
-  });
+  res.status(HTTP_STATUS.OK).json({ success: true, data: toFrontendReceipt(receipt) });
 });
 
-/**
- * Update a receipt
- * PUT /api/receipts/:id
- */
 export const updateReceipt = asyncHandler(async (req: Request, res: Response) => {
   const userId = req.userId!;
-  const receiptId = req.params.id;
+  const receipt = await receiptService.updateReceipt(userId, req.params.id, req.body);
+  if (!receipt) throw new AppError(HTTP_STATUS.NOT_FOUND, 'Receipt not found');
 
-  const receipt = await receiptService.updateReceipt(userId, receiptId, req.body);
+  logger.info({ message: 'Receipt updated', userId, receiptId: req.params.id });
 
-  if (!receipt) {
-    throw new AppError(HTTP_STATUS.NOT_FOUND, 'Receipt not found');
-  }
+  const frontendReceipt = toFrontendReceipt(receipt);
+  emitToUser(userId, 'receipt:updated', { receipt: frontendReceipt });
 
-  logger.info({
-    message: 'Receipt updated',
-    userId,
-    receiptId,
-  });
+  res.status(HTTP_STATUS.OK).json({ success: true, data: frontendReceipt, message: 'Receipt updated' });
+});
 
-  res.status(HTTP_STATUS.OK).json({
-    success: true,
-    data: toFrontendReceipt(receipt),
-    message: 'Receipt updated successfully',
-  });
+export const deleteReceipt = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.userId!;
+  await receiptService.deleteReceipt(userId, req.params.id);
+
+  logger.info({ message: 'Receipt deleted', userId, receiptId: req.params.id });
+
+  emitToUser(userId, 'receipt:deleted', { receiptId: req.params.id });
+
+  res.status(HTTP_STATUS.OK).json({ success: true, data: null, message: 'Receipt deleted' });
 });
 
 /**
- * Delete a receipt
- * DELETE /api/receipts/:id
+ * Export all receipts as CSV
+ * GET /api/receipts/export
  */
-export const deleteReceipt = asyncHandler(async (req: Request, res: Response) => {
+export const exportReceipts = asyncHandler(async (req: Request, res: Response) => {
   const userId = req.userId!;
-  const receiptId = req.params.id;
+  const result = await receiptService.getReceipts(userId, 1, 10000);
 
-  await receiptService.deleteReceipt(userId, receiptId);
+  const header = 'Date,Merchant,Category,Amount,Notes\n';
+  const rows = result.receipts.map((r: any) => {
+    const merchant = String(r.merchant ?? '').replace(/"/g, '""');
+    const notes = String(r.notes ?? '').replace(/"/g, '""');
+    const category = normalizeCategory(r.category);
+    return `${r.date},"${merchant}","${category}",${r.amount},"${notes}"`;
+  }).join('\n');
 
-  logger.info({
-    message: 'Receipt deleted',
-    userId,
-    receiptId,
-  });
-
-  res.status(HTTP_STATUS.OK).json({
-    success: true,
-    data: null,
-    message: 'Receipt deleted successfully',
-  });
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename=receipts-${new Date().toISOString().split('T')[0]}.csv`);
+  res.send(header + rows);
 });

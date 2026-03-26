@@ -4,6 +4,7 @@ import { getDatabase } from '../config/database.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { logger } from '../utils/logger.js';
 import { HTTP_STATUS } from '../utils/constants.js';
+import { emitToUser } from '../config/websocket.js';
 
 const settingsService = new SettingsService();
 
@@ -76,17 +77,19 @@ export const updateSettings = asyncHandler(async (req: Request, res: Response) =
     updates: Object.keys(updates),
   });
 
+  const settingsPayload = {
+    name: profile.name,
+    email: profile.email,
+    monthlyBudget: savedSettings.monthlyBudget,
+    notificationsEnabled: Boolean(savedSettings.notificationsEnabled),
+    darkMode: Boolean(savedSettings.darkMode),
+  };
+
+  emitToUser(userId, 'settings:updated', { settings: settingsPayload });
+
   res.status(HTTP_STATUS.OK).json({
     success: true,
-    data: {
-      settings: {
-        name: profile.name,
-        email: profile.email,
-        monthlyBudget: savedSettings.monthlyBudget,
-        notificationsEnabled: Boolean(savedSettings.notificationsEnabled),
-        darkMode: Boolean(savedSettings.darkMode),
-      },
-    },
+    data: { settings: settingsPayload },
     message: 'Settings updated successfully',
   });
 });
