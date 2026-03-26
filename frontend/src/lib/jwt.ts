@@ -9,8 +9,7 @@ export const decodeToken = (token: string): JWTPayload | null => {
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
-    const payload = JSON.parse(atob(parts[1]));
-    return payload as JWTPayload;
+    return JSON.parse(atob(parts[1])) as JWTPayload;
   } catch {
     return null;
   }
@@ -28,5 +27,7 @@ export const getTokenFromStorage = (): string | null => {
 
 export const removeTokenFromStorage = (): void => {
   localStorage.removeItem('auth_token');
+  localStorage.removeItem('refresh_token');
   localStorage.removeItem('user');
+  localStorage.removeItem('userSettings');
 };

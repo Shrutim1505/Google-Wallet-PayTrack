@@ -28,6 +28,7 @@ export function AuthLayout({ onLoginSuccess }: AuthLayoutProps) {
 
       localStorage.setItem('user', JSON.stringify(user));
       localStorage.setItem('auth_token', token);
+      if (result?.refreshToken) localStorage.setItem('refresh_token', result.refreshToken);
       onLoginSuccess?.();
     } catch (e: any) {
       setError(e?.message || (isRegister ? 'Registration failed' : 'Login failed'));

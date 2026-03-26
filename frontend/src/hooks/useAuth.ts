@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { isTokenExpired, removeTokenFromStorage } from '../lib/jwt';
+import { api } from '../services/api';
 
 export interface User {
   id: string;
@@ -16,13 +17,13 @@ export function useAuth() {
     const storedUser = localStorage.getItem('user');
 
     if (token && storedUser && !isTokenExpired(token)) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch {
-        removeTokenFromStorage();
+      try { setUser(JSON.parse(storedUser)); } catch { removeTokenFromStorage(); }
+    } else if (token && isTokenExpired(token) && localStorage.getItem('refresh_token')) {
+      // Token expired but refresh token exists — the API interceptor will handle refresh
+      if (storedUser) {
+        try { setUser(JSON.parse(storedUser)); } catch { removeTokenFromStorage(); }
       }
     } else if (token) {
-      // Token expired — clean up
       removeTokenFromStorage();
     }
     setLoading(false);
@@ -30,13 +31,15 @@ export function useAuth() {
 
   const isAuthenticated = () => {
     const token = localStorage.getItem('auth_token');
-    if (!token || isTokenExpired(token)) {
-      return false;
-    }
+    const refresh = localStorage.getItem('refresh_token');
+    if (!token) return false;
+    // If access token expired but refresh exists, still authenticated (interceptor will refresh)
+    if (isTokenExpired(token) && !refresh) return false;
     return !!user || !!localStorage.getItem('user');
   };
 
-  const logout = () => {
+  const logout = async () => {
+    await api.logout();
     removeTokenFromStorage();
     setUser(null);
     window.location.reload();

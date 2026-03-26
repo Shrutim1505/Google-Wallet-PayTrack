@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Edit2, Trash2, Download } from 'lucide-react';
 import { Receipt } from '../../../types/receipt';
+import { formatCurrency } from '../../../utils/currency';
 
 interface ReceiptModalProps {
   receipt: Receipt;
@@ -12,6 +13,12 @@ interface ReceiptModalProps {
 export function ReceiptModal({ receipt, onClose, onUpdate, onDelete }: ReceiptModalProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editedReceipt, setEditedReceipt] = useState<Receipt>(receipt);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
 
   const handleSave = () => {
     if (onUpdate) {
@@ -34,13 +41,13 @@ Receipt Details
 
 Merchant: ${editedReceipt.merchant}
 Category: ${editedReceipt.category}
-Amount: ₹${editedReceipt.amount}
+Amount: ${formatCurrency(editedReceipt.amount)}
 Date: ${editedReceipt.date}
 
 Items:
-${editedReceipt.items.map((item) => `- ${item.name}: ₹${item.price}`).join('\n')}
+${editedReceipt.items.map((item) => `- ${item.name}: ${formatCurrency(item.price)}`).join('\n')}
 
-Total: ₹${editedReceipt.amount}
+Total: ${formatCurrency(editedReceipt.amount)}
     `.trim();
 
     const element = document.createElement('a');
@@ -103,7 +110,7 @@ Total: ₹${editedReceipt.amount}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               ) : (
-                <p className="text-2xl font-bold text-blue-600">₹{editedReceipt.amount}</p>
+                <p className="text-2xl font-bold text-blue-600">{formatCurrency(editedReceipt.amount)}</p>
               )}
             </div>
 
@@ -161,7 +168,7 @@ Total: ₹${editedReceipt.amount}
                         <p className="text-sm text-gray-600">Qty: {item.quantity}</p>
                       )}
                     </div>
-                    <p className="font-semibold text-gray-900">₹{item.price}</p>
+                    <p className="font-semibold text-gray-900">{formatCurrency(item.price)}</p>
                   </div>
                 ))
               )}
@@ -172,7 +179,7 @@ Total: ₹${editedReceipt.amount}
           <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
             <div className="flex items-center justify-between">
               <p className="text-lg font-semibold text-gray-900">Total Amount:</p>
-              <p className="text-2xl font-bold text-blue-600">₹{editedReceipt.amount}</p>
+              <p className="text-2xl font-bold text-blue-600">{formatCurrency(editedReceipt.amount)}</p>
             </div>
           </div>
         </div>

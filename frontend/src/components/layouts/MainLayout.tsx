@@ -14,6 +14,7 @@ import { formatCurrency } from '../../utils/currency';
 import { FilterOptions, Receipt } from '../../types/receipt';
 import { api } from '../../services/api';
 import toast from 'react-hot-toast';
+import { Download } from 'lucide-react';
 
 type TabType = 'dashboard' | 'receipts' | 'analytics' | 'settings';
 
@@ -34,6 +35,30 @@ export function MainLayout() {
 
   const { receipts, handleUploadReceipt, updateReceipt, deleteReceipt, fetchReceipts } = useReceipts();
   const { settings, saveSettings } = useSettings();
+
+  // Close modals on Escape
+  React.useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowUpload(false); setShowAddManual(false); setShowSettings(false); setSelectedReceipt(null);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  const handleExportCSV = async () => {
+    try {
+      const blob = await api.exportReceiptsCSV();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `receipts-${new Date().toISOString().split('T')[0]}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Receipts exported!');
+    } catch { toast.error('Export failed'); }
+  };
 
   const navigationItems = [
     { id: 'dashboard', label: 'Dashboard' },
@@ -158,6 +183,10 @@ export function MainLayout() {
                 <p className="text-gray-600 mt-1">Your digital receipts</p>
               </div>
               <div className="flex gap-3">
+                <button onClick={handleExportCSV}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all font-medium flex items-center gap-2">
+                  <Download className="w-4 h-4" /> Export CSV
+                </button>
                 <button 
                   onClick={() => setShowAddManual(true)}
                   className="px-6 py-2 border-2 border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-all font-medium"
