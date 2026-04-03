@@ -1,35 +1,15 @@
-export interface ReceiptItem {
-  id?: string;
-  name: string;
-  price: number;
-  quantity?: number;
-}
+import { Receipt } from '../types/receipt';
 
-export interface Receipt {
-  id: string;
-  merchant: string;
-  amount: number;
-  date: string; // Change from Date to string
-  category: string;
-  items: ReceiptItem[];
-}
-
-export interface SpendingInsight {
-  category: string;
-  amount: number;
-  percentage: number;
-}
-
-export interface BudgetAlert {
-  id: string;
-  message: string;
-  type: 'warning' | 'critical';
-}
-
-export interface FilterOptions {
-  category?: string;
-  dateRange?: string;
-  minAmount: number;
-  maxAmount: number;
-  merchant?: string;
-}
+export const mockReceipts: Receipt[] = [
+  {
+    id: 'mock-1',
+    merchant: 'ABC Supermarket',
+    amount: 800,
+    date: '2024-03-19',
+    category: 'Food',
+    items: [
+      { name: 'Groceries', price: 500, quantity: 1 },
+      { name: 'Vegetables', price: 300, quantity: 1 },
+    ],
+  },
+];

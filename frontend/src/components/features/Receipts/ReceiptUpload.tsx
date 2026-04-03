@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Upload, X } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 interface ReceiptUploadProps {
   onUpload: (file: File) => Promise<void>;
@@ -18,7 +19,7 @@ export function ReceiptUpload({ onUpload, onClose }: ReceiptUploadProps) {
       if (selectedFile.type.startsWith('image/') || selectedFile.type === 'application/pdf') {
         setFile(selectedFile);
       } else {
-        alert('Please upload an image (JPG, PNG) or PDF');
+        toast.error('Please upload an image (JPG, PNG) or PDF');
       }
     }
   };
@@ -37,11 +38,10 @@ export function ReceiptUpload({ onUpload, onClose }: ReceiptUploadProps) {
     setLoading(true);
     try {
       await onUpload(file);
-      setFile(null);
       onClose();
-      alert('Receipt uploaded successfully!');
+      toast.success('Receipt uploaded successfully!');
     } catch (error) {
-      alert('Failed to upload receipt. Please try again.');
+      toast.error('Failed to upload receipt. Please try again.');
     } finally {
       setLoading(false);
     }
