@@ -6,20 +6,8 @@ import * as authController from '../controllers/authController.js';
 
 const router = Router();
 
-// Register: validate body, apply auth rate limiter
-router.post(
-  '/register',
-  authLimiter,
-  validateRequest(schemas.register, 'body'),
-  authController.register
-);
-
-// Login: validate body, apply auth rate limiter
-router.post(
-  '/login',
-  authLimiter,
-  validateRequest(schemas.login, 'body'),
-  authController.login
-);
+router.post('/register', authLimiter, validateRequest(schemas.register, 'body'), authController.register);
+router.post('/login', authLimiter, validateRequest(schemas.login, 'body'), authController.login);
+router.get('/verify', authController.verify);
 
 export default router;

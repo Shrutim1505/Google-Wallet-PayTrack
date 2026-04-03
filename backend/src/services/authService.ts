@@ -1,71 +1,78 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
-import { getDatabase } from '../config/database.js';
+import { getDatabase, runTransaction } from '../config/database.js';
 import { environment } from '../config/environment.js';
 import { AppError } from '../middleware/errorHandler.js';
-import { logger } from '../utils/logger.js';
+import { HTTP_STATUS } from '../utils/constants.js';
+
+interface AuthResult {
+  user: { id: string; email: string; name: string };
+  token: string;
+}
 
 export class AuthService {
-  async register(email: string, password: string, name: string) {
+  async register(email: string, password: string, name: string): Promise<AuthResult> {
     const db = getDatabase();
 
-    const existingUser = await db.get('SELECT id FROM users WHERE email = ?', [email]);
-    if (existingUser) {
-      throw new AppError(409, 'Email already registered');
+    const existing = await db.get('SELECT id FROM users WHERE email = ?', [email]);
+    if (existing) {
+      throw new AppError(HTTP_STATUS.CONFLICT, 'Email already registered');
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
     const userId = uuidv4();
+    const passwordHash = await bcrypt.hash(password, 12);
 
-    try {
+    await runTransaction(async () => {
       await db.run(
         'INSERT INTO users (id, email, name, passwordhash) VALUES (?, ?, ?, ?)',
         [userId, email, name, passwordHash]
       );
-    } catch (error: any) {
-      logger.error({
-        message: 'Database error during user registration',
-        error: error.message,
-        email,
-      });
-      throw new AppError(500, 'Failed to register user');
-    }
+      // Create default settings row so GET /settings never returns empty
+      await db.run(
+        'INSERT INTO user_settings (userId) VALUES (?)',
+        [userId]
+      );
+    });
 
-    const token = jwt.sign(
-      { userId, email },
-      environment.JWT_SECRET,
-      { expiresIn: environment.JWT_EXPIRY } as any
-    );
-
-    return {
-      user: { id: userId, email, name },
-      token,
-    };
+    const token = this.signToken(userId, email);
+    return { user: { id: userId, email, name }, token };
   }
 
-  async login(email: string, password: string) {
+  async login(email: string, password: string): Promise<AuthResult> {
     const db = getDatabase();
 
-    const user = await db.get('SELECT * FROM users WHERE email = ?', [email]);
+    const user = await db.get('SELECT id, email, name, passwordhash FROM users WHERE email = ?', [email]);
     if (!user) {
-      throw new AppError(401, 'Invalid email or password');
+      throw new AppError(HTTP_STATUS.UNAUTHORIZED, 'Invalid email or password');
     }
 
-    const isValid = await bcrypt.compare(password, user.passwordhash);
-    if (!isValid) {
-      throw new AppError(401, 'Invalid email or password');
+    const valid = await bcrypt.compare(password, user.passwordhash);
+    if (!valid) {
+      throw new AppError(HTTP_STATUS.UNAUTHORIZED, 'Invalid email or password');
     }
 
-    const token = jwt.sign(
-      { userId: user.id, email: user.email },
-      environment.JWT_SECRET,
-      { expiresIn: environment.JWT_EXPIRY } as any
-    );
+    const token = this.signToken(user.id, user.email);
+    return { user: { id: user.id, email: user.email, name: user.name }, token };
+  }
 
-    return {
-      user: { id: user.id, email: user.email, name: user.name },
-      token,
-    };
+  async verifyToken(token: string): Promise<{ userId: string; email: string }> {
+    try {
+      const decoded = jwt.verify(token, environment.JWT_SECRET) as { userId: string; email: string };
+      // Confirm user still exists
+      const db = getDatabase();
+      const user = await db.get('SELECT id FROM users WHERE id = ?', [decoded.userId]);
+      if (!user) throw new AppError(HTTP_STATUS.UNAUTHORIZED, 'User no longer exists');
+      return { userId: decoded.userId, email: decoded.email };
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new AppError(HTTP_STATUS.UNAUTHORIZED, 'Invalid or expired token');
+    }
+  }
+
+  private signToken(userId: string, email: string): string {
+    return jwt.sign({ userId, email }, environment.JWT_SECRET, {
+      expiresIn: environment.JWT_EXPIRY,
+    } as any);
   }
 }

@@ -44,8 +44,8 @@ export const schemas = {
       'number.positive': 'Amount must be positive',
       'any.required': 'Amount is required',
     }),
-    date: Joi.date().iso().required().messages({
-      'date.iso': 'Date must be in ISO format',
+    date: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}/).required().messages({
+      'string.pattern.base': 'Date must be in YYYY-MM-DD format',
       'any.required': 'Date is required',
     }),
     category: Joi.string().valid(...RECEIPT_CATEGORIES).optional(),
@@ -66,7 +66,7 @@ export const schemas = {
   updateReceipt: Joi.object({
     merchant: Joi.string().min(1).max(255).optional(),
     amount: Joi.number().positive().optional(),
-    date: Joi.date().iso().optional(),
+    date: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}/).optional(),
     category: Joi.string().valid(...RECEIPT_CATEGORIES).optional(),
     currency: Joi.string().valid(...CURRENCIES).optional(),
     items: Joi.array().items(
@@ -81,8 +81,10 @@ export const schemas = {
     tags: Joi.array().items(Joi.string()).optional(),
   }),
 
-  // Settings
+  // Settings (also allows profile fields name/email)
   updateSettings: Joi.object({
+    name: Joi.string().min(2).max(100).optional(),
+    email: Joi.string().email().optional(),
     monthlyBudget: Joi.number().positive().optional(),
     notificationsEnabled: Joi.boolean().optional(),
     darkMode: Joi.boolean().optional(),
