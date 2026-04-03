@@ -77,6 +77,45 @@ export async function initializeDatabase(): Promise<Database> {
     CREATE INDEX IF NOT EXISTS idx_receipts_userId_date ON receipts(userId, date DESC);
     CREATE INDEX IF NOT EXISTS idx_receipts_userId_category ON receipts(userId, category);
     CREATE INDEX IF NOT EXISTS idx_budgets_userId ON budgets(userId);
+
+    CREATE TABLE IF NOT EXISTS splits (
+      id TEXT PRIMARY KEY,
+      receiptId TEXT NOT NULL,
+      userId TEXT NOT NULL,
+      shareToken TEXT UNIQUE NOT NULL,
+      participants TEXT DEFAULT '[]',
+      splitType TEXT DEFAULT 'equal',
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(receiptId) REFERENCES receipts(id) ON DELETE CASCADE,
+      FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS smart_alerts (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      type TEXT NOT NULL,
+      message TEXT NOT NULL,
+      severity TEXT DEFAULT 'info',
+      data TEXT DEFAULT '{}',
+      isRead INTEGER DEFAULT 0,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS ml_training_data (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      merchant TEXT NOT NULL,
+      items TEXT DEFAULT '',
+      category TEXT NOT NULL,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_splits_userId ON splits(userId);
+    CREATE INDEX IF NOT EXISTS idx_splits_shareToken ON splits(shareToken);
+    CREATE INDEX IF NOT EXISTS idx_smart_alerts_userId ON smart_alerts(userId, createdAt DESC);
+    CREATE INDEX IF NOT EXISTS idx_ml_training_userId ON ml_training_data(userId);
   `);
 
   await seedDemoUser();

@@ -60,8 +60,8 @@ export class OCRService {
 
   private async extractWithVision(imagePath: string): Promise<string> {
     try {
-      const { ImageAnnotatorClient } = await import('@google-cloud/vision');
-      const client = new ImageAnnotatorClient({
+      const vision = await import('@google-cloud/vision' as string);
+      const client = new vision.ImageAnnotatorClient({
         projectId: environment.GOOGLE_CLOUD_PROJECT_ID,
         ...(environment.GOOGLE_CLOUD_KEY_FILE && { keyFilename: environment.GOOGLE_CLOUD_KEY_FILE }),
       });

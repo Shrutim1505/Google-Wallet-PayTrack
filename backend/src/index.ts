@@ -7,6 +7,7 @@ import http from 'node:http';
 
 import app from './app.js';
 import { initializeDatabase, closeDatabase } from './config/database.js';
+import { initializeWebSocket } from './config/websocket.js';
 import { environment } from './config/environment.js';
 import { logger } from './utils/logger.js';
 
@@ -19,6 +20,7 @@ async function start() {
     logger.info('Database ready');
 
     const server = http.createServer(app);
+    initializeWebSocket(server);
 
     server.listen(environment.PORT, () => {
       logger.info(`Server running on http://localhost:${environment.PORT}`);

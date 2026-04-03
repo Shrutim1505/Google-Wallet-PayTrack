@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { ReceiptService, ReceiptFilters } from '../services/receiptService.js';
 import { CategorizationService } from '../services/categorizationService.js';
-import { OCRService } from '../services/octService.js';
+import { OCRService } from '../services/ocrService.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
@@ -139,6 +139,27 @@ export const getReceipts = asyncHandler(async (req: Request, res: Response) => {
     },
     message: 'Receipts retrieved successfully',
   });
+});
+
+/** GET /api/receipts/export — export all receipts as JSON */
+export const exportReceipts = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.userId!;
+  const result = await receiptService.getReceipts(userId, 1, 10000);
+
+  const format = (req.query.format as string) || 'json';
+
+  if (format === 'csv') {
+    const header = 'id,merchant,amount,date,category\n';
+    const rows = result.receipts.map((r: any) =>
+      `"${r.id}","${r.merchant}",${r.amount},"${r.date}","${r.category}"`
+    ).join('\n');
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename=receipts.csv');
+    return res.send(header + rows);
+  }
+
+  res.setHeader('Content-Disposition', 'attachment; filename=receipts.json');
+  res.status(HTTP_STATUS.OK).json({ success: true, data: result.receipts.map(toFrontendReceipt) });
 });
 
 /** GET /api/receipts/:id */

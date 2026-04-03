@@ -18,4 +18,14 @@ export const environment = {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),
-} as const;
+
+  // Google Wallet (optional)
+  GOOGLE_WALLET_ISSUER_ID: process.env.GOOGLE_WALLET_ISSUER_ID || '',
+
+  // Google Cloud Vision OCR (optional)
+  GOOGLE_CLOUD_PROJECT_ID: process.env.GOOGLE_CLOUD_PROJECT_ID || '',
+  GOOGLE_CLOUD_KEY_FILE: process.env.GOOGLE_CLOUD_KEY_FILE || '',
+
+  // Currency exchange API (optional)
+  EXCHANGE_RATE_API_URL: process.env.EXCHANGE_RATE_API_URL || 'https://open.er-api.com/v6/latest',
+};

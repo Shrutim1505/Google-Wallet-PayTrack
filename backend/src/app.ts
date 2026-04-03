@@ -17,6 +17,8 @@ import settingsRoutes from './routes/settings.js';
 import analyticsRoutes from './routes/analytics.js';
 import budgetRoutes from './routes/budgets.js';
 import aiRoutes from './routes/ai.js';
+import walletRoutes from './routes/wallet.js';
+import featureRoutes from './routes/features.js';
 
 const app = express();
 
@@ -72,6 +74,8 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/budgets', budgetRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/wallet', walletRoutes);
+app.use('/api/features', featureRoutes);
 
 // ── 404 ──
 app.use((_req, res) => {
