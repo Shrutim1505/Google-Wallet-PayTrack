@@ -1,22 +1,22 @@
 import path from 'node:path';
 import sqlite3 from 'sqlite3';
-import { open } from 'sqlite';
+import { open, Database } from 'sqlite';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
+import { environment } from './environment.js';
 
-let db: any;
+let db: Database;
 
-export async function initializeDatabase() {
-  const sqliteFilename = process.env.SQLITE_FILENAME
-    ? path.resolve(process.cwd(), process.env.SQLITE_FILENAME)
-    : path.resolve(process.cwd(), 'paytrack.sqlite');
+export async function initializeDatabase(): Promise<Database> {
+  const sqliteFilename = path.resolve(process.cwd(), environment.SQLITE_FILENAME);
 
   db = await open({
     filename: sqliteFilename,
     driver: sqlite3.Database,
   });
 
-  await db.exec(`PRAGMA foreign_keys = ON;`);
+  await db.exec('PRAGMA foreign_keys = ON;');
+  await db.exec('PRAGMA journal_mode = WAL;');  // Better concurrent read performance
 
   await db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -72,32 +72,97 @@ export async function initializeDatabase() {
       updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
     );
+
+    -- Indexes for common query patterns
+    CREATE INDEX IF NOT EXISTS idx_receipts_userId_date ON receipts(userId, date DESC);
+    CREATE INDEX IF NOT EXISTS idx_receipts_userId_category ON receipts(userId, category);
+    CREATE INDEX IF NOT EXISTS idx_budgets_userId ON budgets(userId);
+
+    CREATE TABLE IF NOT EXISTS splits (
+      id TEXT PRIMARY KEY,
+      receiptId TEXT NOT NULL,
+      userId TEXT NOT NULL,
+      shareToken TEXT UNIQUE NOT NULL,
+      participants TEXT DEFAULT '[]',
+      splitType TEXT DEFAULT 'equal',
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(receiptId) REFERENCES receipts(id) ON DELETE CASCADE,
+      FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS smart_alerts (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      type TEXT NOT NULL,
+      message TEXT NOT NULL,
+      severity TEXT DEFAULT 'info',
+      data TEXT DEFAULT '{}',
+      isRead INTEGER DEFAULT 0,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS ml_training_data (
+      id TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      merchant TEXT NOT NULL,
+      items TEXT DEFAULT '',
+      category TEXT NOT NULL,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_splits_userId ON splits(userId);
+    CREATE INDEX IF NOT EXISTS idx_splits_shareToken ON splits(shareToken);
+    CREATE INDEX IF NOT EXISTS idx_smart_alerts_userId ON smart_alerts(userId, createdAt DESC);
+    CREATE INDEX IF NOT EXISTS idx_ml_training_userId ON ml_training_data(userId);
   `);
 
-  const demoEmail = 'demo@example.com';
-  const demoPassword = 'password';
-  const demoName = 'Demo User';
-
-  const existingDemo = await db.get('SELECT id FROM users WHERE email = ?', [demoEmail]);
-  if (!existingDemo) {
-    const userId = uuidv4();
-    const passwordHash = await bcrypt.hash(demoPassword, 10);
-    await db.run(
-      `INSERT INTO users (id, email, name, passwordhash)
-       VALUES (?, ?, ?, ?)`,
-      [userId, demoEmail, demoName, passwordHash]
-    );
-
-    await db.run(
-      `INSERT INTO user_settings (userId, monthlyBudget, notificationsEnabled, darkMode)
-       VALUES (?, ?, ?, ?)`,
-      [userId, 50000, 1, 0]
-    );
-  }
+  await seedDemoUser();
 
   return db;
 }
 
-export function getDatabase() {
+async function seedDemoUser() {
+  const demoEmail = 'demo@example.com';
+  const existing = await db.get('SELECT id FROM users WHERE email = ?', [demoEmail]);
+  if (existing) return;
+
+  const userId = uuidv4();
+  const passwordHash = await bcrypt.hash('password', 10);
+
+  await runTransaction(async () => {
+    await db.run(
+      'INSERT INTO users (id, email, name, passwordhash) VALUES (?, ?, ?, ?)',
+      [userId, demoEmail, 'Demo User', passwordHash]
+    );
+    await db.run(
+      'INSERT INTO user_settings (userId, monthlyBudget, notificationsEnabled, darkMode) VALUES (?, ?, ?, ?)',
+      [userId, 50000, 1, 0]
+    );
+  });
+}
+
+export function getDatabase(): Database {
+  if (!db) throw new Error('Database not initialized — call initializeDatabase() first');
   return db;
+}
+
+export async function closeDatabase(): Promise<void> {
+  if (db) await db.close();
+}
+
+/**
+ * Run multiple statements inside a single SQLite transaction.
+ * Automatically rolls back on error.
+ */
+export async function runTransaction(fn: () => Promise<void>): Promise<void> {
+  await db.exec('BEGIN');
+  try {
+    await fn();
+    await db.exec('COMMIT');
+  } catch (err) {
+    await db.exec('ROLLBACK');
+    throw err;
+  }
 }

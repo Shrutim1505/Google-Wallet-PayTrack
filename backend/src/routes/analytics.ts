@@ -4,7 +4,7 @@ import * as analyticsController from '../controllers/analyticsController.js';
 
 const router = Router();
 router.use(authMiddleware);
+
 router.get('/', analyticsController.getAnalytics);
 
 export default router;
-
