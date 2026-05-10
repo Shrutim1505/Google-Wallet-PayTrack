@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { getDatabase } from '../config/database.js';
+import { getPool } from '../config/database.js';
 import { logger } from '../utils/logger.js';
 
 export interface SmartAlert {
@@ -19,25 +19,24 @@ export interface SmartAlert {
 export class SmartAlertService {
   /** Generate alerts after a new receipt is added */
   async analyzeNewReceipt(userId: string, merchant: string, amount: number, category: string) {
-    const db = getDatabase();
+    const pool = getPool();
     const alerts: Omit<SmartAlert, 'id' | 'createdAt'>[] = [];
 
-    // 1. Check for spending spike: compare this week vs last week for same category
     const now = new Date();
     const weekStart = new Date(now.getTime() - 7 * 86400000).toISOString().split('T')[0];
     const prevWeekStart = new Date(now.getTime() - 14 * 86400000).toISOString().split('T')[0];
 
-    const thisWeek = await db.get(
-      'SELECT SUM(amount) as total FROM receipts WHERE userId = ? AND category = ? AND date >= ?',
+    const thisWeek = await pool.query(
+      'SELECT SUM(amount)::numeric as total FROM receipts WHERE user_id = $1 AND category = $2 AND date >= $3',
       [userId, category, weekStart]
     );
-    const lastWeek = await db.get(
-      'SELECT SUM(amount) as total FROM receipts WHERE userId = ? AND category = ? AND date >= ? AND date < ?',
+    const lastWeek = await pool.query(
+      'SELECT SUM(amount)::numeric as total FROM receipts WHERE user_id = $1 AND category = $2 AND date >= $3 AND date < $4',
       [userId, category, prevWeekStart, weekStart]
     );
 
-    const thisWeekTotal = thisWeek?.total || 0;
-    const lastWeekTotal = lastWeek?.total || 0;
+    const thisWeekTotal = parseFloat(thisWeek.rows[0]?.total || '0');
+    const lastWeekTotal = parseFloat(lastWeek.rows[0]?.total || '0');
 
     if (lastWeekTotal > 0 && thisWeekTotal > lastWeekTotal * 1.4) {
       const pctIncrease = Math.round(((thisWeekTotal - lastWeekTotal) / lastWeekTotal) * 100);
@@ -50,14 +49,13 @@ export class SmartAlertService {
       });
     }
 
-    // 2. Check for unusual merchant (first time + high amount)
-    const merchantCount = await db.get(
-      'SELECT COUNT(*) as count FROM receipts WHERE userId = ? AND LOWER(merchant) = LOWER(?)',
+    const merchantCount = await pool.query(
+      'SELECT COUNT(*)::int as count FROM receipts WHERE user_id = $1 AND LOWER(merchant) = LOWER($2)',
       [userId, merchant]
     );
-    if ((merchantCount?.count || 0) <= 1) {
-      const avgReceipt = await db.get('SELECT AVG(amount) as avg FROM receipts WHERE userId = ?', [userId]);
-      const avg = avgReceipt?.avg || 0;
+    if ((merchantCount.rows[0]?.count || 0) <= 1) {
+      const avgReceipt = await pool.query('SELECT AVG(amount)::numeric as avg FROM receipts WHERE user_id = $1', [userId]);
+      const avg = parseFloat(avgReceipt.rows[0]?.avg || '0');
       if (amount > avg * 2 && avg > 0) {
         alerts.push({
           type: 'unusual_merchant',
@@ -69,40 +67,39 @@ export class SmartAlertService {
       }
     }
 
-    // 3. Budget warning
-    const settings = await db.get('SELECT monthlyBudget FROM user_settings WHERE userId = ?', [userId]);
-    if (settings?.monthlyBudget) {
+    const settings = await pool.query('SELECT monthly_budget FROM user_settings WHERE user_id = $1', [userId]);
+    const monthlyBudget = parseFloat(settings.rows[0]?.monthly_budget || '0');
+    if (monthlyBudget > 0) {
       const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-      const monthTotal = await db.get(
-        'SELECT SUM(amount) as total FROM receipts WHERE userId = ? AND date >= ?',
+      const monthTotal = await pool.query(
+        'SELECT SUM(amount)::numeric as total FROM receipts WHERE user_id = $1 AND date >= $2',
         [userId, monthStart]
       );
-      const spent = monthTotal?.total || 0;
-      const pct = Math.round((spent / settings.monthlyBudget) * 100);
+      const spent = parseFloat(monthTotal.rows[0]?.total || '0');
+      const pct = Math.round((spent / monthlyBudget) * 100);
 
       if (pct >= 90 && pct < 100) {
         alerts.push({
           type: 'budget_warning',
-          message: `You've used ${pct}% of your monthly budget (₹${Math.round(spent)} / ₹${settings.monthlyBudget}). Only ₹${Math.round(settings.monthlyBudget - spent)} remaining.`,
+          message: `You've used ${pct}% of your monthly budget (₹${Math.round(spent)} / ₹${monthlyBudget}). Only ₹${Math.round(monthlyBudget - spent)} remaining.`,
           severity: 'critical',
-          data: { spent, budget: settings.monthlyBudget, pct },
+          data: { spent, budget: monthlyBudget, pct },
           isRead: false,
         });
       } else if (pct >= 75 && pct < 90) {
         alerts.push({
           type: 'budget_warning',
-          message: `Budget alert: ${pct}% used this month. ₹${Math.round(settings.monthlyBudget - spent)} remaining.`,
+          message: `Budget alert: ${pct}% used this month. ₹${Math.round(monthlyBudget - spent)} remaining.`,
           severity: 'warning',
-          data: { spent, budget: settings.monthlyBudget, pct },
+          data: { spent, budget: monthlyBudget, pct },
           isRead: false,
         });
       }
     }
 
-    // Save alerts
     for (const alert of alerts) {
-      await db.run(
-        'INSERT INTO smart_alerts (id, userId, type, message, severity, data) VALUES (?, ?, ?, ?, ?, ?)',
+      await pool.query(
+        'INSERT INTO smart_alerts (id, user_id, type, message, severity, data) VALUES ($1, $2, $3, $4, $5, $6)',
         [uuidv4(), userId, alert.type, alert.message, alert.severity, JSON.stringify(alert.data)]
       );
     }
@@ -111,54 +108,52 @@ export class SmartAlertService {
     return alerts;
   }
 
-  /** Get unread alerts for a user */
   async getAlerts(userId: string, limit = 20): Promise<SmartAlert[]> {
-    const db = getDatabase();
-    const rows = await db.all(
-      'SELECT * FROM smart_alerts WHERE userId = ? ORDER BY createdAt DESC LIMIT ?',
+    const pool = getPool();
+    const { rows } = await pool.query(
+      'SELECT * FROM smart_alerts WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2',
       [userId, limit]
     );
-    return rows.map(r => ({ ...r, data: JSON.parse(r.data || '{}'), isRead: !!r.isRead }));
+    return rows.map((r: any) => ({ ...r, data: typeof r.data === 'string' ? JSON.parse(r.data) : r.data, isRead: r.is_read }));
   }
 
-  /** Mark alerts as read */
   async markRead(userId: string, alertIds?: string[]) {
-    const db = getDatabase();
+    const pool = getPool();
     if (alertIds?.length) {
-      const placeholders = alertIds.map(() => '?').join(',');
-      await db.run(`UPDATE smart_alerts SET isRead = 1 WHERE userId = ? AND id IN (${placeholders})`, [userId, ...alertIds]);
+      await pool.query(
+        `UPDATE smart_alerts SET is_read = TRUE WHERE user_id = $1 AND id = ANY($2)`,
+        [userId, alertIds]
+      );
     } else {
-      await db.run('UPDATE smart_alerts SET isRead = 1 WHERE userId = ?', [userId]);
+      await pool.query('UPDATE smart_alerts SET is_read = TRUE WHERE user_id = $1', [userId]);
     }
   }
 
-  /** Get unread count */
   async getUnreadCount(userId: string): Promise<number> {
-    const db = getDatabase();
-    const row = await db.get('SELECT COUNT(*) as count FROM smart_alerts WHERE userId = ? AND isRead = 0', [userId]);
-    return row?.count || 0;
+    const pool = getPool();
+    const { rows } = await pool.query('SELECT COUNT(*)::int as count FROM smart_alerts WHERE user_id = $1 AND is_read = FALSE', [userId]);
+    return rows[0]?.count || 0;
   }
 
-  /** Generate weekly spending digest */
   async generateWeeklyDigest(userId: string): Promise<SmartAlert | null> {
-    const db = getDatabase();
+    const pool = getPool();
     const weekStart = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
 
-    const weekData = await db.all(
-      'SELECT category, SUM(amount) as total, COUNT(*) as count FROM receipts WHERE userId = ? AND date >= ? GROUP BY category',
+    const { rows: weekData } = await pool.query(
+      'SELECT category, SUM(amount)::numeric as total, COUNT(*)::int as count FROM receipts WHERE user_id = $1 AND date >= $2 GROUP BY category',
       [userId, weekStart]
     );
 
     if (!weekData.length) return null;
 
-    const totalSpent = weekData.reduce((s: number, r: any) => s + r.total, 0);
-    const topCategory = weekData.sort((a: any, b: any) => b.total - a.total)[0];
+    const totalSpent = weekData.reduce((s: number, r: any) => s + parseFloat(r.total), 0);
+    const topCategory = weekData.sort((a: any, b: any) => parseFloat(b.total) - parseFloat(a.total))[0];
 
-    const message = `Weekly digest: You spent ₹${Math.round(totalSpent)} across ${weekData.length} categories. Top: ${topCategory.category} (₹${Math.round(topCategory.total)}).`;
+    const message = `Weekly digest: You spent ₹${Math.round(totalSpent)} across ${weekData.length} categories. Top: ${topCategory.category} (₹${Math.round(parseFloat(topCategory.total))}).`;
 
     const id = uuidv4();
-    await db.run(
-      'INSERT INTO smart_alerts (id, userId, type, message, severity, data) VALUES (?, ?, ?, ?, ?, ?)',
+    await pool.query(
+      'INSERT INTO smart_alerts (id, user_id, type, message, severity, data) VALUES ($1, $2, $3, $4, $5, $6)',
       [id, userId, 'weekly_digest', message, 'info', JSON.stringify({ totalSpent, categories: weekData })]
     );
 

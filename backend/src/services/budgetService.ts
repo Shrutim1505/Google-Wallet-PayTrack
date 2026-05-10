@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { getDatabase } from '../config/database.js';
+import { getPool } from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { HTTP_STATUS } from '../utils/constants.js';
 
@@ -13,100 +13,94 @@ export interface CreateBudgetDTO {
 
 export class BudgetService {
   async getBudgets(userId: string) {
-    const db = getDatabase();
-    return db.all('SELECT * FROM budgets WHERE userId = ? ORDER BY category', [userId]);
+    const pool = getPool();
+    const { rows } = await pool.query('SELECT * FROM budgets WHERE user_id = $1 ORDER BY category', [userId]);
+    return rows;
   }
 
   async getBudgetById(userId: string, budgetId: string) {
-    const db = getDatabase();
-    const budget = await db.get('SELECT * FROM budgets WHERE id = ? AND userId = ?', [budgetId, userId]);
-    if (!budget) throw new AppError(HTTP_STATUS.NOT_FOUND, 'Budget not found');
-    return budget;
+    const pool = getPool();
+    const { rows } = await pool.query('SELECT * FROM budgets WHERE id = $1 AND user_id = $2', [budgetId, userId]);
+    if (rows.length === 0) throw new AppError(HTTP_STATUS.NOT_FOUND, 'Budget not found');
+    return rows[0];
   }
 
   async createBudget(userId: string, data: CreateBudgetDTO) {
-    const db = getDatabase();
+    const pool = getPool();
+    const id = uuidv4();
 
-    // Prevent duplicate category+period budgets
-    const existing = await db.get(
-      'SELECT id FROM budgets WHERE userId = ? AND category = ? AND period = ?',
+    const { rows: existing } = await pool.query(
+      'SELECT id FROM budgets WHERE user_id = $1 AND category = $2 AND period = $3',
       [userId, data.category, data.period || 'monthly']
     );
-    if (existing) {
+    if (existing.length > 0) {
       throw new AppError(HTTP_STATUS.CONFLICT, `Budget for ${data.category} (${data.period || 'monthly'}) already exists`);
     }
 
-    const id = uuidv4();
-    await db.run(
-      `INSERT INTO budgets (id, userId, category, amount, period, alertEnabled, alertThreshold)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [id, userId, data.category, data.amount, data.period || 'monthly', data.alertEnabled !== false ? 1 : 0, data.alertThreshold ?? 80]
+    await pool.query(
+      `INSERT INTO budgets (id, user_id, category, amount, period, alert_enabled, alert_threshold)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [id, userId, data.category, data.amount, data.period || 'monthly', data.alertEnabled !== false, data.alertThreshold ?? 80]
     );
 
     return this.getBudgetById(userId, id);
   }
 
   async updateBudget(userId: string, budgetId: string, updates: Partial<CreateBudgetDTO>) {
-    const db = getDatabase();
     await this.getBudgetById(userId, budgetId);
+    const pool = getPool();
 
     const setClauses: string[] = [];
     const values: any[] = [];
+    let idx = 1;
 
-    if (updates.amount != null) { setClauses.push('amount = ?'); values.push(updates.amount); }
-    if (updates.alertEnabled != null) { setClauses.push('alertEnabled = ?'); values.push(updates.alertEnabled ? 1 : 0); }
-    if (updates.alertThreshold != null) { setClauses.push('alertThreshold = ?'); values.push(updates.alertThreshold); }
+    if (updates.amount != null) { setClauses.push(`amount = $${idx++}`); values.push(updates.amount); }
+    if (updates.alertEnabled != null) { setClauses.push(`alert_enabled = $${idx++}`); values.push(updates.alertEnabled); }
+    if (updates.alertThreshold != null) { setClauses.push(`alert_threshold = $${idx++}`); values.push(updates.alertThreshold); }
 
     if (setClauses.length === 0) return this.getBudgetById(userId, budgetId);
 
-    setClauses.push('updatedAt = CURRENT_TIMESTAMP');
+    setClauses.push('updated_at = NOW()');
     values.push(budgetId, userId);
 
-    await db.run(`UPDATE budgets SET ${setClauses.join(', ')} WHERE id = ? AND userId = ?`, values);
+    await pool.query(
+      `UPDATE budgets SET ${setClauses.join(', ')} WHERE id = $${idx} AND user_id = $${idx + 1}`,
+      values
+    );
     return this.getBudgetById(userId, budgetId);
   }
 
   async deleteBudget(userId: string, budgetId: string) {
     await this.getBudgetById(userId, budgetId);
-    const db = getDatabase();
-    await db.run('DELETE FROM budgets WHERE id = ? AND userId = ?', [budgetId, userId]);
+    const pool = getPool();
+    await pool.query('DELETE FROM budgets WHERE id = $1 AND user_id = $2', [budgetId, userId]);
   }
 
-  /**
-   * Returns budget vs actual spending for the current period.
-   * Useful for budget alerts on the frontend.
-   */
   async getBudgetStatus(userId: string) {
-    const db = getDatabase();
+    const pool = getPool();
     const now = new Date();
     const startDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
     const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
 
-    const budgets = await db.all('SELECT * FROM budgets WHERE userId = ?', [userId]);
-
-    const spending = await db.all(
-      `SELECT category, SUM(amount) as spent
-       FROM receipts WHERE userId = ? AND date BETWEEN ? AND ?
+    const { rows: budgets } = await pool.query('SELECT * FROM budgets WHERE user_id = $1', [userId]);
+    const { rows: spending } = await pool.query(
+      `SELECT category, SUM(amount)::numeric as spent
+       FROM receipts WHERE user_id = $1 AND date BETWEEN $2 AND $3
        GROUP BY category`,
       [userId, startDate, endDate]
     );
 
-    const spendingMap = new Map(spending.map((s: any) => [s.category, s.spent]));
+    const spendingMap = new Map(spending.map(s => [s.category, parseFloat(s.spent)]));
 
-    return budgets.map((b: any) => {
+    return budgets.map(b => {
       const spent = spendingMap.get(b.category) || 0;
-      const percentage = b.amount > 0 ? Math.round((spent / b.amount) * 100) : 0;
+      const percentage = b.amount > 0 ? Math.round((spent / parseFloat(b.amount)) * 100) : 0;
       return {
-        id: b.id,
-        category: b.category,
-        budgetAmount: b.amount,
-        spent,
-        percentage,
-        period: b.period,
-        alertEnabled: Boolean(b.alertEnabled),
-        alertThreshold: b.alertThreshold,
+        id: b.id, category: b.category, budgetAmount: parseFloat(b.amount),
+        spent, percentage, period: b.period,
+        alertEnabled: b.alert_enabled, alertThreshold: b.alert_threshold,
         isOverBudget: percentage >= 100,
-        isNearThreshold: percentage >= b.alertThreshold && percentage < 100,
+        isNearThreshold: percentage >= b.alert_threshold && percentage < 100,
       };
     });
   }

@@ -12,17 +12,20 @@ export const environment = {
   JWT_SECRET: process.env.JWT_SECRET || 'your-super-secret-key-min-32-chars',
   JWT_EXPIRY: process.env.JWT_EXPIRY || '7d',
   FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:5173',
-  SQLITE_FILENAME: process.env.SQLITE_FILENAME || 'paytrack.sqlite',
   MAX_FILE_SIZE: parseInt(process.env.MAX_FILE_SIZE || '10485760', 10),
   ALLOWED_FILE_TYPES: (process.env.ALLOWED_FILE_TYPES || 'image/jpeg,image/png,application/pdf')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),
 
+  // PostgreSQL
+  DATABASE_URL: process.env.DATABASE_URL || 'postgresql://localhost:5432/paytrack',
+  DB_POOL_MAX: parseInt(process.env.DB_POOL_MAX || '20', 10),
+
   // Google Wallet (optional)
   GOOGLE_WALLET_ISSUER_ID: process.env.GOOGLE_WALLET_ISSUER_ID || '',
 
-  // Google Cloud Vision OCR (optional)
+  // Google Cloud Vision OCR
   GOOGLE_CLOUD_PROJECT_ID: process.env.GOOGLE_CLOUD_PROJECT_ID || '',
   GOOGLE_CLOUD_KEY_FILE: process.env.GOOGLE_CLOUD_KEY_FILE || '',
 

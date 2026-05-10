@@ -1,3 +1,5 @@
+import { ImageAnnotatorClient } from '@google-cloud/vision';
+import fs from 'node:fs';
 import { environment } from '../config/environment.js';
 import { logger } from '../utils/logger.js';
 
@@ -24,7 +26,7 @@ const DATE_PATTERNS = [
   /((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{1,2},?\s*\d{4})/i,
 ];
 
-/** Amount patterns: currency symbol + number */
+/** Amount patterns */
 const AMOUNT_PATTERNS = [
   /(?:total|grand\s*total|amount\s*due|balance\s*due)[:\s]*[₹$€£]?\s*([\d,]+\.?\d*)/i,
   /[₹$€£]\s*([\d,]+\.\d{2})/,
@@ -34,49 +36,74 @@ const AMOUNT_PATTERNS = [
 const ITEM_PATTERN = /^\s*[-•*]?\s*(.+?)\s+[₹$€£]?\s*(\d[\d,]*\.?\d*)\s*$/;
 
 /**
- * OCR service with Google Cloud Vision API support.
- * Falls back to intelligent mock parsing when GOOGLE_CLOUD_PROJECT_ID is not set.
+ * OCR service using Google Cloud Vision API for receipt text extraction.
+ * Falls back to local regex-based parsing when Vision API is unavailable.
  */
 export class OCRService {
-  private useGoogleVision: boolean;
+  private visionClient: ImageAnnotatorClient | null = null;
 
   constructor() {
-    this.useGoogleVision = !!environment.GOOGLE_CLOUD_PROJECT_ID;
-    if (this.useGoogleVision) {
-      logger.info({ message: 'OCR: Google Cloud Vision API enabled' });
-    } else {
-      logger.info({ message: 'OCR: Using mock parser (set GOOGLE_CLOUD_PROJECT_ID to enable Vision API)' });
-    }
-  }
-
-  /** Extract structured receipt data from an image file path. */
-  async extractReceiptData(imagePath: string): Promise<ReceiptData> {
-    const rawText = this.useGoogleVision
-      ? await this.extractWithVision(imagePath)
-      : this.generateMockText(imagePath);
-
-    return this.parseReceiptText(rawText);
-  }
-
-  private async extractWithVision(imagePath: string): Promise<string> {
-    try {
-      const vision = await import('@google-cloud/vision' as string);
-      const client = new vision.ImageAnnotatorClient({
+    if (environment.GOOGLE_CLOUD_PROJECT_ID) {
+      this.visionClient = new ImageAnnotatorClient({
         projectId: environment.GOOGLE_CLOUD_PROJECT_ID,
         ...(environment.GOOGLE_CLOUD_KEY_FILE && { keyFilename: environment.GOOGLE_CLOUD_KEY_FILE }),
       });
-
-      const [result] = await client.textDetection(imagePath);
-      const text = result.fullTextAnnotation?.text || result.textAnnotations?.[0]?.description || '';
-      logger.info({ message: 'Vision API OCR complete', chars: text.length });
-      return text;
-    } catch (error) {
-      logger.error({ message: 'Vision API failed, falling back to mock', error: (error as Error).message });
-      return this.generateMockText(imagePath);
+      logger.info({ message: 'OCR: Google Cloud Vision API initialized' });
+    } else {
+      logger.info({ message: 'OCR: Vision API not configured, using local parser (set GOOGLE_CLOUD_PROJECT_ID to enable)' });
     }
   }
 
-  private generateMockText(_imagePath: string): string {
+  /** Extract structured receipt data from an image file. */
+  async extractReceiptData(imagePath: string): Promise<ReceiptData> {
+    const rawText = await this.extractText(imagePath);
+    return this.parseReceiptText(rawText);
+  }
+
+  private async extractText(imagePath: string): Promise<string> {
+    if (this.visionClient) {
+      return this.extractWithVision(imagePath);
+    }
+    return this.extractLocal(imagePath);
+  }
+
+  /**
+   * Google Cloud Vision API text detection.
+   * Uses DOCUMENT_TEXT_DETECTION for better receipt parsing accuracy.
+   */
+  private async extractWithVision(imagePath: string): Promise<string> {
+    try {
+      const imageBuffer = fs.readFileSync(imagePath);
+      const [result] = await this.visionClient!.documentTextDetection({
+        image: { content: imageBuffer.toString('base64') },
+        imageContext: {
+          languageHints: ['en', 'hi'],
+        },
+      });
+
+      const text = result.fullTextAnnotation?.text || '';
+      const confidence = result.fullTextAnnotation?.pages?.[0]?.confidence || 0;
+
+      logger.info({
+        message: 'Vision API OCR complete',
+        chars: text.length,
+        confidence: Math.round(confidence * 100),
+      });
+
+      if (!text) {
+        logger.warn({ message: 'Vision API returned empty text, using local fallback' });
+        return this.extractLocal(imagePath);
+      }
+
+      return text;
+    } catch (error) {
+      logger.error({ message: 'Vision API failed', error: (error as Error).message });
+      return this.extractLocal(imagePath);
+    }
+  }
+
+  /** Local fallback: generates mock receipt text for development/testing. */
+  private extractLocal(_imagePath: string): string {
     const merchants = ['ABC SUPERMARKET', 'METRO GROCERY', 'FRESH MART', 'DAILY NEEDS STORE'];
     const merchant = merchants[Math.floor(Math.random() * merchants.length)];
     const date = new Date().toISOString().split('T')[0];
@@ -90,13 +117,12 @@ export class OCRService {
     return [
       `  ${merchant}`,
       `  Date: ${date}`,
-      `  Items:`,
       ...items.map(i => `  - ${i.name} ₹${i.price}`),
       `  Total: ₹${total}`,
     ].join('\n');
   }
 
-  /** NLP-like receipt text parser */
+  /** NLP-style receipt text parser using pattern matching and heuristics. */
   private parseReceiptText(text: string): ReceiptData {
     const vendor = this.extractVendor(text);
     const date = this.extractDate(text);

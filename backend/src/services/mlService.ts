@@ -1,4 +1,4 @@
-import { getDatabase } from '../config/database.js';
+import { getPool } from '../config/database.js';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger.js';
 
@@ -34,11 +34,11 @@ export class MLService {
     const cached = modelCache.get(userId);
     if (cached && Date.now() - cached.builtAt < 5 * 60 * 1000) return cached;
 
-    const db = getDatabase();
-    const rows = await db.all('SELECT merchant, items, category FROM ml_training_data WHERE userId = ?', [userId]);
+    const pool = getPool();
+    const { rows } = await pool.query('SELECT merchant, items, category FROM ml_training_data WHERE user_id = $1', [userId]);
 
     // Also learn from existing receipts
-    const receipts = await db.all('SELECT merchant, items, category FROM receipts WHERE userId = ?', [userId]);
+    const { rows: receipts } = await pool.query('SELECT merchant, items, category FROM receipts WHERE user_id = $1', [userId]);
 
     const categories = new Map<string, CategoryModel>();
     const vocabulary = new Set<string>();
@@ -120,25 +120,23 @@ export class MLService {
 
   /** Record a user correction to improve the model */
   async train(userId: string, merchant: string, items: string[], category: string) {
-    const db = getDatabase();
-    await db.run(
-      'INSERT INTO ml_training_data (id, userId, merchant, items, category) VALUES (?, ?, ?, ?, ?)',
+    const pool = getPool();
+    await pool.query(
+      'INSERT INTO ml_training_data (id, user_id, merchant, items, category) VALUES ($1, $2, $3, $4, $5)',
       [uuidv4(), userId, merchant, items.join(' '), category]
     );
-    // Invalidate cache so model rebuilds
     modelCache.delete(userId);
     logger.info({ message: 'ML model trained', userId, merchant, category });
   }
 
-  /** Get model stats for a user */
   async getModelStats(userId: string) {
     const model = await this.getModel(userId);
-    const db = getDatabase();
-    const trainingCount = await db.get('SELECT COUNT(*) as count FROM ml_training_data WHERE userId = ?', [userId]);
+    const pool = getPool();
+    const { rows } = await pool.query('SELECT COUNT(*)::int as count FROM ml_training_data WHERE user_id = $1', [userId]);
 
     return {
       totalTrainingDocs: model.totalDocs,
-      userCorrections: trainingCount?.count || 0,
+      userCorrections: rows[0]?.count || 0,
       vocabularySize: model.vocabulary.size,
       categories: Array.from(model.categories.entries()).map(([name, m]) => ({ name, documentCount: m.count })),
     };

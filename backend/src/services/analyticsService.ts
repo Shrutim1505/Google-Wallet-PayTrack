@@ -1,75 +1,38 @@
-import { getDatabase } from '../config/database.js';
-import { AppError } from '../middleware/errorHandler.js';
-import { HTTP_STATUS } from '../utils/constants.js';
+import { getPool } from '../config/database.js';
 
 export class AnalyticsService {
   async getAnalytics(userId: string, year: number = new Date().getFullYear(), month: number = new Date().getMonth() + 1) {
-    const db = getDatabase();
+    const pool = getPool();
 
-    try {
-      // All time statistics
-      const receipts = await db.all(
-        `SELECT category, amount FROM receipts WHERE userId = ?`,
-        [userId]
-      );
+    // All time statistics
+    const { rows: allTimeRows } = await pool.query(
+      `SELECT category, SUM(amount)::numeric as total, COUNT(*)::int as count
+       FROM receipts WHERE user_id = $1 GROUP BY category`,
+      [userId]
+    );
 
-      const totalSpent = receipts.reduce((sum: number, r: any) => sum + Number(r.amount || 0), 0);
-      const receiptsCount = receipts.length;
+    const totalSpent = allTimeRows.reduce((sum, r) => sum + parseFloat(r.total), 0);
+    const receiptsCount = allTimeRows.reduce((sum, r) => sum + r.count, 0);
+    const categories = allTimeRows.map(r => ({ category: r.category, amount: parseFloat(r.total) }));
 
-      const byCategoryMap = new Map<string, number>();
-      for (const r of receipts) {
-        const cat = String(r.category || 'Uncategorized');
-        byCategoryMap.set(cat, (byCategoryMap.get(cat) || 0) + Number(r.amount || 0));
-      }
+    // Monthly statistics
+    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+    const endDate = new Date(year, month, 0).toISOString().split('T')[0];
 
-      const categories = Array.from(byCategoryMap.entries()).map(([category, amount]) => ({
-        category,
-        amount,
-      }));
+    const { rows: monthlyRows } = await pool.query(
+      `SELECT category, SUM(amount)::numeric as total, COUNT(*)::int as count
+       FROM receipts WHERE user_id = $1 AND date BETWEEN $2 AND $3
+       GROUP BY category`,
+      [userId, startDate, endDate]
+    );
 
-      // Monthly statistics
-      const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-      const endDate = new Date(year, month, 0).toISOString().split('T')[0];
+    const monthlySpent = monthlyRows.reduce((sum, r) => sum + parseFloat(r.total), 0);
+    const monthlyCount = monthlyRows.reduce((sum, r) => sum + r.count, 0);
+    const monthlyCategories = monthlyRows.map(r => ({ category: r.category, amount: parseFloat(r.total) }));
 
-      const monthlyReceipts = await db.all(
-        `SELECT category, amount FROM receipts
-         WHERE userId = ? AND date BETWEEN ? AND ?`,
-        [userId, startDate, endDate]
-      );
-
-      const monthlySpent = monthlyReceipts.reduce((sum: number, r: any) => sum + Number(r.amount || 0), 0);
-      const monthlyCount = monthlyReceipts.length;
-
-      const monthlyByCategoryMap = new Map<string, number>();
-      for (const r of monthlyReceipts) {
-        const cat = String(r.category || 'Uncategorized');
-        monthlyByCategoryMap.set(cat, (monthlyByCategoryMap.get(cat) || 0) + Number(r.amount || 0));
-      }
-
-      const monthlyCategories = Array.from(monthlyByCategoryMap.entries()).map(([category, amount]) => ({
-        category,
-        amount,
-      }));
-
-      return {
-        allTime: {
-          totalSpent,
-          receiptsCount,
-          categories,
-        },
-        monthly: {
-          year,
-          month,
-          totalSpent: monthlySpent,
-          receiptsCount: monthlyCount,
-          categories: monthlyCategories,
-        },
-      };
-    } catch (error: any) {
-      throw new AppError(HTTP_STATUS.INTERNAL_SERVER_ERROR, 'Failed to fetch analytics', {
-        error: error.message,
-      });
-    }
+    return {
+      allTime: { totalSpent, receiptsCount, categories },
+      monthly: { year, month, totalSpent: monthlySpent, receiptsCount: monthlyCount, categories: monthlyCategories },
+    };
   }
 }
-

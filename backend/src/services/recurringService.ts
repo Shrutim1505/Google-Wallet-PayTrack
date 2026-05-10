@@ -1,4 +1,4 @@
-import { getDatabase } from '../config/database.js';
+import { getPool } from '../config/database.js';
 import { logger } from '../utils/logger.js';
 
 interface RecurringPattern {
@@ -20,10 +20,10 @@ interface RecurringPattern {
  */
 export class RecurringService {
   async detectRecurring(userId: string): Promise<RecurringPattern[]> {
-    const db = getDatabase();
-    const receipts = await db.all(
+    const pool = getPool();
+    const { rows: receipts } = await pool.query(
       `SELECT merchant, amount, category, date FROM receipts
-       WHERE userId = ? ORDER BY merchant, date`,
+       WHERE user_id = $1 ORDER BY merchant, date`,
       [userId]
     );
 

@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { getDatabase } from '../config/database.js';
+import { getPool } from '../config/database.js';
 import { logger } from '../utils/logger.js';
 
 interface DuplicateCandidate {
@@ -19,16 +19,16 @@ interface DuplicateCandidate {
 export class DuplicateService {
   /** Check if a new receipt is a potential duplicate */
   async checkDuplicate(userId: string, merchant: string, amount: number, date: string, imageBuffer?: Buffer): Promise<DuplicateCandidate[]> {
-    const db = getDatabase();
+    const pool = getPool();
 
     // Look at receipts within ±3 days
     const dateObj = new Date(date);
     const startDate = new Date(dateObj.getTime() - 3 * 86400000).toISOString().split('T')[0];
     const endDate = new Date(dateObj.getTime() + 3 * 86400000).toISOString().split('T')[0];
 
-    const candidates = await db.all(
-      `SELECT id, merchant, amount, date, imageUrl FROM receipts
-       WHERE userId = ? AND date BETWEEN ? AND ?`,
+    const { rows: candidates } = await pool.query(
+      `SELECT id, merchant, amount, date, image_url FROM receipts
+       WHERE user_id = $1 AND date BETWEEN $2 AND $3`,
       [userId, startDate, endDate]
     );
 
@@ -45,7 +45,7 @@ export class DuplicateService {
       let score = merchantSim * 0.4 + amountSim * 0.35 + dateSim * 0.25;
 
       // Boost if image hashes match
-      if (imageHash && c.imageUrl) {
+      if (imageHash && c.image_url) {
         // For now, exact image hash match gives a big boost
         score = Math.min(1, score + 0.2);
       }

@@ -5,6 +5,7 @@ import { OCRService } from '../services/ocrService.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
+import { emitToUser } from '../config/websocket.js';
 import { HTTP_STATUS, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../utils/constants.js';
 
 const receiptService = new ReceiptService();
@@ -25,7 +26,7 @@ function toFrontendReceipt(row: any) {
     id: String(row.id),
     merchant: String(row.merchant ?? 'Unknown Merchant'),
     amount: Number(row.amount ?? 0),
-    date: typeof row.date === 'string' ? row.date : new Date(row.date).toISOString().split('T')[0],
+    date: row.date instanceof Date ? row.date.toISOString().split('T')[0] : String(row.date ?? ''),
     category: normalizeCategory(row.category),
     items: parseJsonArray(row.items),
   };
@@ -69,6 +70,7 @@ export const createReceipt = asyncHandler(async (req: Request, res: Response) =>
   });
 
   logger.info({ msg: 'Receipt created', userId, receiptId: receipt.id });
+  emitToUser(userId, 'receipt:created', { receipt: toFrontendReceipt(receipt) });
 
   res.status(HTTP_STATUS.CREATED).json({
     success: true,
@@ -104,6 +106,7 @@ export const uploadReceipt = asyncHandler(async (req: Request, res: Response) =>
   });
 
   logger.info({ msg: 'Receipt uploaded', userId, receiptId: receipt.id });
+  emitToUser(userId, 'receipt:created', { receipt: toFrontendReceipt(receipt) });
 
   res.status(HTTP_STATUS.CREATED).json({
     success: true,
@@ -178,6 +181,7 @@ export const updateReceipt = asyncHandler(async (req: Request, res: Response) =>
   const receipt = await receiptService.updateReceipt(req.userId!, req.params.id, req.body);
 
   logger.info({ msg: 'Receipt updated', userId: req.userId, receiptId: req.params.id });
+  emitToUser(req.userId!, 'receipt:updated', { receipt: toFrontendReceipt(receipt) });
 
   res.status(HTTP_STATUS.OK).json({
     success: true,
@@ -191,6 +195,7 @@ export const deleteReceipt = asyncHandler(async (req: Request, res: Response) =>
   await receiptService.deleteReceipt(req.userId!, req.params.id);
 
   logger.info({ msg: 'Receipt deleted', userId: req.userId, receiptId: req.params.id });
+  emitToUser(req.userId!, 'receipt:deleted', { receiptId: req.params.id });
 
   res.status(HTTP_STATUS.OK).json({
     success: true,
