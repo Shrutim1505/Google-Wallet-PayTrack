@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { AuthService } from '../services/authService.js';
+import jwt from 'jsonwebtoken';
+import { AuthService, TokenPayload } from '../services/authService.js';
 import { getPool } from '../config/database.js';
+import { environment } from '../config/environment.js';
+import { isTokenBlacklisted } from '../services/tokenBlacklist.js';
 
 const authService = new AuthService();
 
@@ -8,77 +11,152 @@ describe('AuthService', () => {
   const testEmail = `test-${Date.now()}@example.com`;
 
   beforeEach(async () => {
-    // Clean up test user if exists
     await getPool().query('DELETE FROM users WHERE email = $1', [testEmail]);
   });
 
   describe('register', () => {
-    it('should register a new user with default role', async () => {
+    it('registers a new user with default role and embeds permissions in JWT', async () => {
       const result = await authService.register(testEmail, 'password123', 'Test User');
 
       expect(result.user.email).toBe(testEmail);
-      expect(result.user.name).toBe('Test User');
       expect(result.user.roles).toContain('user');
-      expect(result.token).toBeDefined();
-      expect(result.refreshToken).toBeDefined();
+      expect(result.user.permissions.length).toBeGreaterThan(0);
+
+      // Verify JWT contains roles AND permissions (no DB needed for authz)
+      const decoded = jwt.decode(result.token) as TokenPayload;
+      expect(decoded.sub).toBe(result.user.id);
+      expect(decoded.roles).toEqual(result.user.roles);
+      expect(decoded.permissions).toEqual(result.user.permissions);
+      expect(decoded.type).toBe('access');
     });
 
-    it('should reject duplicate email', async () => {
+    it('rejects duplicate emails', async () => {
       await authService.register(testEmail, 'password123', 'Test User');
-      await expect(authService.register(testEmail, 'password456', 'Another')).rejects.toThrow('Email already registered');
+      await expect(authService.register(testEmail, 'password456', 'Another')).rejects.toThrow(
+        /already registered/i
+      );
+    });
+
+    it('gives "user" role standard permissions', async () => {
+      const result = await authService.register(testEmail, 'password123', 'Test User');
+      expect(result.user.permissions).toContain('receipts:create');
+      expect(result.user.permissions).toContain('receipts:read');
+      expect(result.user.permissions).not.toContain('users:manage');
+      expect(result.user.permissions).not.toContain('receipts:read_all');
     });
   });
 
   describe('login', () => {
-    it('should login with correct credentials', async () => {
+    it('logs in with correct credentials and returns JWT with permissions', async () => {
       await authService.register(testEmail, 'password123', 'Test User');
       const result = await authService.login(testEmail, 'password123');
 
-      expect(result.user.email).toBe(testEmail);
-      expect(result.token).toBeDefined();
+      const decoded = jwt.decode(result.token) as TokenPayload;
+      expect(decoded.email).toBe(testEmail);
+      expect(decoded.permissions.length).toBeGreaterThan(0);
     });
 
-    it('should reject wrong password', async () => {
+    it('rejects wrong password', async () => {
       await authService.register(testEmail, 'password123', 'Test User');
-      await expect(authService.login(testEmail, 'wrongpass')).rejects.toThrow('Invalid email or password');
+      await expect(authService.login(testEmail, 'wrong')).rejects.toThrow(/invalid/i);
     });
 
-    it('should reject non-existent email', async () => {
-      await expect(authService.login('nobody@test.com', 'pass')).rejects.toThrow('Invalid email or password');
+    it('returns same error for unknown email (prevents user enumeration)', async () => {
+      await expect(authService.login('nobody@test.com', 'any')).rejects.toThrow(
+        /Invalid email or password/i
+      );
+    });
+
+    it('does not log in soft-deleted users', async () => {
+      await authService.register(testEmail, 'password123', 'Test User');
+      await getPool().query('UPDATE users SET deleted_at = NOW() WHERE email = $1', [testEmail]);
+      await expect(authService.login(testEmail, 'password123')).rejects.toThrow(/invalid/i);
     });
   });
 
-  describe('token refresh', () => {
-    it('should refresh token and rotate', async () => {
+  describe('refresh', () => {
+    it('refreshes and issues new tokens', async () => {
       const reg = await authService.register(testEmail, 'password123', 'Test User');
       const refreshed = await authService.refresh(reg.refreshToken);
 
       expect(refreshed.token).toBeDefined();
       expect(refreshed.refreshToken).toBeDefined();
-      // Old refresh token should now be blacklisted
-      await expect(authService.refresh(reg.refreshToken)).rejects.toThrow('Token has been revoked');
     });
 
-    it('should reject reused refresh token', async () => {
-      const email2 = `test2-${Date.now()}@example.com`;
-      const reg = await authService.register(email2, 'password123', 'Test User 2');
+    it('blacklists the old refresh token on rotation', async () => {
+      const reg = await authService.register(testEmail, 'password123', 'Test User');
       await authService.refresh(reg.refreshToken);
-      await expect(authService.refresh(reg.refreshToken)).rejects.toThrow('Token has been revoked');
+
+      // Old refresh token is now blacklisted
+      expect(await isTokenBlacklisted(reg.refreshToken)).toBe(true);
+
+      // Second use fails
+      await expect(authService.refresh(reg.refreshToken)).rejects.toThrow(/revoked/i);
+    });
+
+    it('rejects using an access token as a refresh token', async () => {
+      const reg = await authService.register(testEmail, 'password123', 'Test User');
+      await expect(authService.refresh(reg.token)).rejects.toThrow(/not a refresh token/i);
+    });
+
+    it('rejects expired refresh tokens', async () => {
+      // Sign a refresh token that's already expired
+      const expired = jwt.sign(
+        { sub: 'u1', email: 'e@test.com', type: 'refresh', roles: [], permissions: [] },
+        environment.JWT_SECRET,
+        { expiresIn: '-1s' }
+      );
+      await expect(authService.refresh(expired)).rejects.toThrow(/invalid or expired/i);
+    });
+  });
+
+  describe('logout', () => {
+    it('blacklists both access and refresh tokens', async () => {
+      const reg = await authService.register(testEmail, 'password123', 'Test User');
+
+      await authService.logout(reg.token, reg.refreshToken);
+
+      expect(await isTokenBlacklisted(reg.token)).toBe(true);
+      expect(await isTokenBlacklisted(reg.refreshToken)).toBe(true);
+    });
+
+    it('tolerates missing tokens gracefully', async () => {
+      await expect(authService.logout(undefined, undefined)).resolves.not.toThrow();
+    });
+
+    it('tolerates malformed tokens gracefully', async () => {
+      await expect(authService.logout('not-a-jwt', 'also-not-a-jwt')).resolves.not.toThrow();
     });
   });
 
   describe('changePassword', () => {
-    it('should change password successfully', async () => {
+    it('changes password successfully', async () => {
       const reg = await authService.register(testEmail, 'password123', 'Test User');
-      await authService.changePassword(reg.user.id, 'password123', 'newpass456');
-
-      const login = await authService.login(testEmail, 'newpass456');
-      expect(login.user.email).toBe(testEmail);
+      await authService.changePassword(reg.user.id, 'password123', 'newPassword456');
+      const loggedIn = await authService.login(testEmail, 'newPassword456');
+      expect(loggedIn.user.email).toBe(testEmail);
     });
 
-    it('should reject wrong current password', async () => {
+    it('rejects wrong current password', async () => {
       const reg = await authService.register(testEmail, 'password123', 'Test User');
-      await expect(authService.changePassword(reg.user.id, 'wrong', 'new')).rejects.toThrow('Current password is incorrect');
+      await expect(
+        authService.changePassword(reg.user.id, 'wrong', 'newPass')
+      ).rejects.toThrow(/current password is incorrect/i);
+    });
+  });
+
+  describe('verifyToken', () => {
+    it('verifies a valid token and returns payload', async () => {
+      const reg = await authService.register(testEmail, 'password123', 'Test User');
+      const payload = await authService.verifyToken(reg.token);
+      expect(payload.sub).toBe(reg.user.id);
+      expect(payload.permissions).toEqual(reg.user.permissions);
+    });
+
+    it('rejects blacklisted tokens', async () => {
+      const reg = await authService.register(testEmail, 'password123', 'Test User');
+      await authService.logout(reg.token);
+      await expect(authService.verifyToken(reg.token)).rejects.toThrow(/revoked/i);
     });
   });
 });
