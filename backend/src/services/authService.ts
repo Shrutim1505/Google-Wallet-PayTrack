@@ -1,26 +1,35 @@
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+import jwt, { SignOptions } from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { getPool, runTransaction } from '../config/database.js';
 import { environment } from '../config/environment.js';
 import { AppError } from '../middleware/errorHandler.js';
-import { HTTP_STATUS } from '../utils/constants.js';
+import { blacklistToken, isTokenBlacklisted, remainingTokenLifetime } from './tokenBlacklist.js';
 
-interface AuthResult {
-  user: { id: string; email: string; name: string; roles: string[] };
+export interface TokenPayload {
+  sub: string;           // user id
+  email: string;
+  roles: string[];
+  permissions: string[];
+  type?: 'access' | 'refresh';
+  iat?: number;
+  exp?: number;
+}
+
+export interface AuthResult {
+  user: { id: string; email: string; name: string; roles: string[]; permissions: string[] };
   token: string;
   refreshToken: string;
 }
-
-// In-memory blacklist for logged-out tokens (use Redis in production)
-const tokenBlacklist = new Set<string>();
 
 export class AuthService {
   async register(email: string, password: string, name: string): Promise<AuthResult> {
     const pool = getPool();
 
-    const { rows: existing } = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
-    if (existing.length > 0) throw new AppError(HTTP_STATUS.CONFLICT, 'Email already registered');
+    const { rows: existing } = await pool.query('SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL', [email]);
+    if (existing.length > 0) {
+      throw AppError.conflict('Email already registered');
+    }
 
     const userId = uuidv4();
     const passwordHash = await bcrypt.hash(password, 12);
@@ -31,100 +40,146 @@ export class AuthService {
         [userId, email, name, passwordHash]
       );
       await client.query('INSERT INTO user_settings (user_id) VALUES ($1)', [userId]);
-      // Assign default 'user' role
       await client.query(`
-        INSERT INTO user_roles (user_id, role_id)
-        SELECT $1, id FROM roles WHERE name = 'user'
+        INSERT INTO user_roles (user_id, role_id) SELECT $1, id FROM roles WHERE name = 'user'
       `, [userId]);
     });
 
-    const roles = await this.getUserRoles(userId);
-    return { user: { id: userId, email, name, roles }, ...this.generateTokens(userId, email) };
+    return this.buildAuthResult(userId, email, name);
   }
 
   async login(email: string, password: string): Promise<AuthResult> {
     const pool = getPool();
     const { rows } = await pool.query(
-      'SELECT id, email, name, password_hash FROM users WHERE email = $1',
+      'SELECT id, email, name, password_hash FROM users WHERE email = $1 AND deleted_at IS NULL',
       [email]
     );
-    if (rows.length === 0) throw new AppError(HTTP_STATUS.UNAUTHORIZED, 'Invalid email or password');
+
+    if (rows.length === 0) {
+      // Same error for missing user and wrong password — prevents user enumeration
+      throw AppError.unauthorized('Invalid email or password');
+    }
 
     const user = rows[0];
     const valid = await bcrypt.compare(password, user.password_hash);
-    if (!valid) throw new AppError(HTTP_STATUS.UNAUTHORIZED, 'Invalid email or password');
+    if (!valid) throw AppError.unauthorized('Invalid email or password');
 
-    const roles = await this.getUserRoles(user.id);
-    return { user: { id: user.id, email: user.email, name: user.name, roles }, ...this.generateTokens(user.id, user.email) };
+    return this.buildAuthResult(user.id, user.email, user.name);
   }
 
   async refresh(refreshToken: string): Promise<AuthResult> {
-    if (tokenBlacklist.has(refreshToken)) {
-      throw new AppError(HTTP_STATUS.UNAUTHORIZED, 'Token has been revoked');
+    if (await isTokenBlacklisted(refreshToken)) {
+      throw AppError.unauthorized('Token has been revoked');
     }
 
+    let decoded: TokenPayload;
     try {
-      const decoded = jwt.verify(refreshToken, environment.JWT_SECRET) as { userId: string; email: string; type?: string };
-      if (decoded.type !== 'refresh') throw new Error('Not a refresh token');
+      decoded = jwt.verify(refreshToken, environment.JWT_SECRET) as TokenPayload;
+    } catch {
+      throw AppError.unauthorized('Invalid or expired refresh token');
+    }
 
-      const pool = getPool();
-      const { rows } = await pool.query('SELECT id, email, name FROM users WHERE id = $1', [decoded.userId]);
-      if (rows.length === 0) throw new AppError(HTTP_STATUS.UNAUTHORIZED, 'User no longer exists');
+    if (decoded.type !== 'refresh') {
+      throw AppError.unauthorized('Not a refresh token');
+    }
 
-      tokenBlacklist.add(refreshToken);
-      const user = rows[0];
-      const roles = await this.getUserRoles(user.id);
-      return { user: { id: user.id, email: user.email, name: user.name, roles }, ...this.generateTokens(user.id, user.email) };
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new AppError(HTTP_STATUS.UNAUTHORIZED, 'Invalid or expired refresh token');
+    const pool = getPool();
+    const { rows } = await pool.query(
+      'SELECT id, email, name FROM users WHERE id = $1 AND deleted_at IS NULL',
+      [decoded.sub]
+    );
+    if (rows.length === 0) throw AppError.unauthorized('User no longer exists');
+
+    // Rotate: blacklist old refresh token for its remaining lifetime
+    if (decoded.exp) {
+      await blacklistToken(refreshToken, remainingTokenLifetime(decoded.exp));
+    }
+
+    const user = rows[0];
+    return this.buildAuthResult(user.id, user.email, user.name);
+  }
+
+  async logout(accessToken?: string, refreshToken?: string): Promise<void> {
+    const tokens = [accessToken, refreshToken].filter(Boolean) as string[];
+    for (const token of tokens) {
+      try {
+        const decoded = jwt.decode(token) as TokenPayload | null;
+        if (decoded?.exp) {
+          await blacklistToken(token, remainingTokenLifetime(decoded.exp));
+        }
+      } catch {
+        // Token is malformed, ignore
+      }
     }
   }
 
-  async logout(refreshToken?: string) {
-    if (refreshToken) tokenBlacklist.add(refreshToken);
-  }
-
-  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
     const pool = getPool();
-    const { rows } = await pool.query('SELECT password_hash FROM users WHERE id = $1', [userId]);
-    if (rows.length === 0) throw new AppError(HTTP_STATUS.NOT_FOUND, 'User not found');
+    const { rows } = await pool.query('SELECT password_hash FROM users WHERE id = $1 AND deleted_at IS NULL', [userId]);
+    if (rows.length === 0) throw AppError.notFound('User');
 
     const valid = await bcrypt.compare(currentPassword, rows[0].password_hash);
-    if (!valid) throw new AppError(HTTP_STATUS.UNAUTHORIZED, 'Current password is incorrect');
+    if (!valid) throw AppError.unauthorized('Current password is incorrect');
 
     const newHash = await bcrypt.hash(newPassword, 12);
     await pool.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [newHash, userId]);
   }
 
-  async verifyToken(token: string): Promise<{ userId: string; email: string }> {
+  async verifyToken(token: string): Promise<TokenPayload> {
+    if (await isTokenBlacklisted(token)) {
+      throw AppError.unauthorized('Token has been revoked');
+    }
     try {
-      const decoded = jwt.verify(token, environment.JWT_SECRET) as { userId: string; email: string };
-      const pool = getPool();
-      const { rows } = await pool.query('SELECT id FROM users WHERE id = $1', [decoded.userId]);
-      if (rows.length === 0) throw new AppError(HTTP_STATUS.UNAUTHORIZED, 'User no longer exists');
-      return { userId: decoded.userId, email: decoded.email };
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new AppError(HTTP_STATUS.UNAUTHORIZED, 'Invalid or expired token');
+      return jwt.verify(token, environment.JWT_SECRET) as TokenPayload;
+    } catch {
+      throw AppError.unauthorized('Invalid or expired token');
     }
   }
 
-  isBlacklisted(token: string): boolean {
-    return tokenBlacklist.has(token);
-  }
-
-  private async getUserRoles(userId: string): Promise<string[]> {
+  private async getUserRolesAndPermissions(userId: string): Promise<{ roles: string[]; permissions: string[] }> {
     const pool = getPool();
-    const { rows } = await pool.query(`
-      SELECT r.name FROM roles r JOIN user_roles ur ON ur.role_id = r.id WHERE ur.user_id = $1
-    `, [userId]);
-    return rows.map(r => r.name);
+    const [rolesResult, permsResult] = await Promise.all([
+      pool.query(
+        `SELECT r.name FROM roles r JOIN user_roles ur ON ur.role_id = r.id WHERE ur.user_id = $1`,
+        [userId]
+      ),
+      pool.query(
+        `SELECT DISTINCT p.name FROM permissions p
+         JOIN role_permissions rp ON rp.permission_id = p.id
+         JOIN user_roles ur ON ur.role_id = rp.role_id
+         WHERE ur.user_id = $1`,
+        [userId]
+      ),
+    ]);
+    return {
+      roles: rolesResult.rows.map(r => r.name),
+      permissions: permsResult.rows.map(p => p.name),
+    };
   }
 
-  private generateTokens(userId: string, email: string) {
-    const token = jwt.sign({ userId, email }, environment.JWT_SECRET, { expiresIn: '15m' } as any);
-    const refreshToken = jwt.sign({ userId, email, type: 'refresh' }, environment.JWT_SECRET, { expiresIn: '7d' } as any);
+  private async buildAuthResult(userId: string, email: string, name: string): Promise<AuthResult> {
+    const { roles, permissions } = await this.getUserRolesAndPermissions(userId);
+    const tokens = this.generateTokens(userId, email, roles, permissions);
+    return {
+      user: { id: userId, email, name, roles, permissions },
+      ...tokens,
+    };
+  }
+
+  private generateTokens(userId: string, email: string, roles: string[], permissions: string[]): { token: string; refreshToken: string } {
+    const accessOpts: SignOptions = { expiresIn: environment.JWT_ACCESS_EXPIRY as any };
+    const refreshOpts: SignOptions = { expiresIn: environment.JWT_REFRESH_EXPIRY as any };
+
+    const token = jwt.sign(
+      { sub: userId, email, roles, permissions, type: 'access' } satisfies TokenPayload,
+      environment.JWT_SECRET,
+      accessOpts
+    );
+    const refreshToken = jwt.sign(
+      { sub: userId, email, roles, permissions, type: 'refresh' } satisfies TokenPayload,
+      environment.JWT_SECRET,
+      refreshOpts
+    );
     return { token, refreshToken };
   }
 }

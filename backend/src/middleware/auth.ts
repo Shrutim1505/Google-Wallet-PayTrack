@@ -1,82 +1,58 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { environment } from '../config/environment.js';
-import { logger } from '../utils/logger.js';
+import { AppError } from './errorHandler.js';
+import { isTokenBlacklisted } from '../services/tokenBlacklist.js';
+import type { TokenPayload } from '../services/authService.js';
 
 declare global {
   namespace Express {
     interface Request {
       userId?: string;
       email?: string;
+      roles?: string[];
+      permissions?: string[];
     }
   }
 }
 
-export interface JWTPayload {
-  userId: string;
-  email: string;
-  iat: number;
-  exp: number;
-}
-
 /**
- * Authentication middleware to verify JWT and attach user info to request
+ * Authentication middleware — verifies JWT and attaches user + permissions to request.
+ * Zero DB calls: permissions are embedded in the JWT at login time.
  */
-export function authMiddleware(req: Request, res: Response, next: NextFunction) {
+export async function authMiddleware(req: Request, _res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader?.startsWith('Bearer ')) {
+    return next(AppError.unauthorized('No token provided'));
+  }
+
+  const token = authHeader.slice(7);
+
+  // Check blacklist first (logged-out tokens)
+  if (await isTokenBlacklisted(token)) {
+    return next(AppError.unauthorized('Token has been revoked'));
+  }
+
+  let decoded: TokenPayload;
   try {
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      logger.debug({ message: 'No token provided' });
-      return res.status(401).json({
-        success: false,
-        error: 'No token provided',
-        timestamp: new Date(),
-      });
-    }
-
-    const token = authHeader.slice(7);
-
-    try {
-      const decoded = jwt.verify(token, environment.JWT_SECRET) as JWTPayload;
-      req.userId = decoded.userId;
-      req.email = decoded.email;
-      next();
-    } catch (verifyError: any) {
-      logger.debug({
-        message: 'Token verification failed',
-        error: verifyError.message,
-      });
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid or expired token',
-        timestamp: new Date(),
-      });
-    }
-  } catch (error) {
-    logger.error({
-      message: 'Authentication middleware error',
-      error: (error as Error).message,
-    });
-    res.status(401).json({
-      success: false,
-      error: 'Authentication failed',
-      timestamp: new Date(),
-    });
+    decoded = jwt.verify(token, environment.JWT_SECRET) as TokenPayload;
+  } catch {
+    return next(AppError.unauthorized('Invalid or expired token'));
   }
+
+  if (decoded.type && decoded.type !== 'access') {
+    return next(AppError.unauthorized('Invalid token type'));
+  }
+
+  req.userId = decoded.sub;
+  req.email = decoded.email;
+  req.roles = decoded.roles || [];
+  req.permissions = decoded.permissions || [];
+  next();
 }
 
-/**
- * Middleware to check if user is authenticated
- * Used to ensure userId exists on request object
- */
-export function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (!req.userId) {
-    return res.status(401).json({
-      success: false,
-      error: 'Authentication required',
-      timestamp: new Date(),
-    });
-  }
+export function requireAuth(req: Request, _res: Response, next: NextFunction) {
+  if (!req.userId) return next(AppError.unauthorized());
   next();
 }

@@ -1,15 +1,16 @@
 import { Request, Response, NextFunction } from 'express';
 import Joi from 'joi';
-import { logger } from '../utils/logger.js';
+import { AppError } from './errorHandler.js';
 
 /**
- * Middleware factory to validate request body, params, or query
+ * Middleware factory to validate request body, params, or query.
+ * Throws AppError.validation — caught by global error handler which returns RFC 7807.
  */
 export const validateRequest = (
   schema: Joi.ObjectSchema,
   schemaType: 'body' | 'params' | 'query' = 'body'
 ) => {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return (req: Request, _res: Response, next: NextFunction) => {
     const dataToValidate = req[schemaType];
 
     const { value, error } = schema.validate(dataToValidate, {
@@ -18,26 +19,13 @@ export const validateRequest = (
     });
 
     if (error) {
-      logger.debug({
-        message: 'Validation error',
-        schemaType,
-        errors: error.details,
-      });
-
-      const messages = error.details.map((d) => ({
+      const errors = error.details.map((d) => ({
         field: d.path.join('.'),
         message: d.message,
       }));
-
-      return res.status(422).json({
-        success: false,
-        error: 'Validation error',
-        details: messages,
-        timestamp: new Date(),
-      });
+      return next(AppError.validation(errors));
     }
 
-    // Replace original with validated value
     req[schemaType] = value;
     next();
   };

@@ -1,254 +1,220 @@
-# PayTrack - Smart Receipt Management System
+# PayTrack — Smart Receipt Management System
 
-A modern full-stack web application for managing receipts, categorizing expenses, tracking spending patterns, and analyzing financial data with real-time charts and budget alerts.
+Production-grade receipt management and personal finance tracking platform. OCR-based receipt parsing, real-time notifications, RBAC, observability — built to scale.
 
-## Quick Start
-
-### Prerequisites
-- Node.js 16+ and npm
-
-### Start All Services
-```bash
-npm run dev
-```
-
-**Frontend:** http://localhost:5173  
-**Backend API:** http://localhost:5000
-
-### Manual Startup
-```bash
-# Terminal 1
-cd backend && npm run dev
-
-# Terminal 2 (new terminal)
-cd frontend && npm run dev
-```
+[![CI](https://github.com/Shrutim1505/Google-Wallet-PayTrack/actions/workflows/ci.yml/badge.svg)](https://github.com/Shrutim1505/Google-Wallet-PayTrack/actions)
 
 ---
 
-## Project Structure
+## Quick Start
 
-### Frontend (`/frontend`)
-React application with TypeScript, Vite, and Tailwind CSS.
-- **components/** - React UI components (layouts, features, common)
-- **hooks/** - Custom React hooks (useAuth, useReceipts, useSettings)
-- **services/** - API communication layer (Axios HTTP client)
-- **types/** - TypeScript interfaces
-- **context/** - Global state management
-- **utils/** - Helper functions
-- **lib/** - Library utilities (JWT)
+### Option 1: Docker Compose (everything containerized)
 
-### Backend (`/backend`)
-Express API server with TypeScript and SQLite.
-- **controllers/** - Request handlers for each route
-- **services/** - Business logic layer
-- **routes/** - API endpoint definitions
-- **middleware/** - Auth, validation, error handling
-- **config/** - Database and environment setup
-- **types/** - TypeScript interfaces
-- **utils/** - Helper functions and constants
+```bash
+git clone https://github.com/Shrutim1505/Google-Wallet-PayTrack.git
+cd Google-Wallet-PayTrack
+docker compose up -d
+
+# Services:
+#   Frontend: http://localhost:5173
+#   Backend:  http://localhost:5000
+#   API Docs: http://localhost:5000/api/docs
+#   Metrics:  http://localhost:5000/metrics
+```
+
+### Option 2: Local development
+
+```bash
+# Start Postgres + Redis in Docker, run backend/frontend locally
+docker compose -f docker-compose.dev.yml up -d
+
+# Backend
+cd backend
+cp .env.example .env.local
+npm install
+npm run migrate up
+npm run dev
+
+# Frontend (new terminal)
+cd frontend
+npm install
+npm run dev
+```
 
 ---
 
 ## Architecture
 
 ```
-Frontend (React)                 Backend (Express)              Database (SQLite)
-    ↓                                ↓                              ↓
-• Components                    • Controllers              • users table
-• Custom Hooks                  • Services                 • receipts table
-• API Client                    • Middleware               • budgets table
-   (Axios)                      • Routes                   • user_settings
-    ↓                                ↓                              ↓
---------- HTTP/JSON --------- /api/auth, /receipts, etc ------- SQL --------
+                    ┌─────────────────────────┐
+                    │   CDN / Load Balancer   │
+                    └─────────────┬───────────┘
+                                  │
+              ┌───────────────────┼───────────────────┐
+              │                   │                   │
+     ┌────────▼────────┐ ┌────────▼────────┐ ┌────────▼────────┐
+     │  Node Instance 1│ │  Node Instance 2│ │  Node Instance N│
+     │   (Express API) │ │   (Express API) │ │   (Express API) │
+     └────────┬────────┘ └────────┬────────┘ └────────┬────────┘
+              │                   │                   │
+              └───────────┬───────┴───────────┬───────┘
+                          │                   │
+                 ┌────────▼─────────┐ ┌───────▼────────┐
+                 │    PostgreSQL    │ │     Redis      │
+                 │  (primary data)  │ │ (cache, queue) │
+                 └──────────────────┘ └────────────────┘
+                          │
+                          │ async jobs
+                 ┌────────▼─────────┐
+                 │  OCR / ML Worker │
+                 │  (Google Vision) │
+                 └──────────────────┘
 ```
 
----
-
-## API Endpoints Summary
-
-### Authentication (`/api/auth`)
-- `POST /register` - Register new user
-- `POST /login` - Login user
-- `GET /verify` - Verify JWT token
-
-### Receipts (`/api/receipts`)
-- `GET /` - Get all receipts
-- `POST /` - Upload receipt
-- `GET /:id` - Get receipt details
-- `PUT /:id` - Update receipt
-- `DELETE /:id` - Delete receipt
-
-### Analytics (`/api/analytics`)
-- `GET /summary` - Get spending analytics
-
-### Settings (`/api/settings`)
-- `GET /` - Get user settings
-- `PUT /` - Update settings
+**Stateless backend instances** scale horizontally. Redis holds token blacklist, idempotency keys, and BullMQ job queue. PostgreSQL is the system of record.
 
 ---
 
-## Key Technologies
+## Key Engineering Features
 
-**Frontend:**
-- React 18.2, TypeScript, Vite 5, Tailwind CSS, Axios
+### Security
+- ✅ JWT with access + refresh token rotation
+- ✅ Refresh tokens blacklisted on use (Redis-backed)
+- ✅ Permissions embedded in JWT — **zero DB calls per authenticated request**
+- ✅ RBAC (admin / user / viewer) with 14 granular permissions
+- ✅ Bcrypt cost 12, parameterized queries, Helmet headers
+- ✅ Rate limiting: 100/15min API, 5/15min auth, 20/hr uploads
+- ✅ Input validation via Joi with RFC 7807 Problem Details errors
+- ✅ Idempotency keys (Stripe-style) prevent duplicate creation
+- ✅ Password reset flow with single-use tokens
+- ✅ Strict env validation via zod (fails fast on misconfiguration)
+- ✅ Trust proxy configured (rate-limit bypass protection)
+- ✅ User enumeration prevention (same error for missing user vs wrong password)
 
-**Backend:**
-- Express.js, TypeScript, SQLite3, JWT, Bcryptjs, Helmet, CORS
+### Observability
+- ✅ **Pino** structured JSON logging with request ID correlation
+- ✅ **Prometheus** metrics at `/metrics` (request duration histograms, counters)
+- ✅ **Sentry** error tracking with PII scrubbing
+- ✅ **Deep health checks**: `/health/live` (K8s liveness) + `/health/ready` (dependency checks)
+- ✅ **OpenAPI 3.1** docs at `/api/docs` with Swagger UI
+- ✅ RFC 7807 Problem Details error responses
+
+### Reliability & Scalability
+- ✅ **Stateless design** — all session/cache state in Redis
+- ✅ **Connection retry** on database startup (5 attempts, 2s backoff)
+- ✅ **Graceful shutdown** — SIGTERM handler, 15s force-kill timeout
+- ✅ **Uncaught exception handler** — fails fast, supervisor restarts
+- ✅ **Compression** + **keep-alive** for lower latency
+- ✅ **Connection pooling** (PG pool of 20 per instance)
+
+### Database
+- ✅ **Versioned migrations** (`node-pg-migrate`) — rollback-safe
+- ✅ **ACID transactions** with dedicated clients (tested with rollback verification)
+- ✅ **Composite indexes**: `(user_id, date DESC)`, `(user_id, category)`, `(user_id, amount)`
+- ✅ **Soft deletes** (`deleted_at` column) for data recovery
+- ✅ **Cascade deletes** on user removal (GDPR-friendly)
+- ✅ **JSONB** columns for flexible items/tags storage
+- ✅ **UUID** primary keys (no ID enumeration attacks)
+
+### DevOps
+- ✅ **Multi-stage Dockerfile** (non-root user, tini for signals, healthcheck)
+- ✅ **Docker Compose** for local dev + production
+- ✅ **GitHub Actions CI** — compile, test, build, audit on every push
+- ✅ **.dockerignore** for small images
+- ✅ **Prometheus + Grafana** ready
 
 ---
 
-## Features
+## API Surface
 
-- User authentication with JWT
-- Receipt upload and management
-- Automatic receipt categorization
-- Spending analytics with charts
-- Budget tracking with alerts
-- Real-time notifications
-- Responsive UI design
-- Search and filter functionality
+### Public
+- `GET /health/live` — K8s liveness probe
+- `GET /health/ready` — K8s readiness probe (checks DB + cache)
+- `GET /metrics` — Prometheus metrics
+- `GET /api/docs` — Swagger UI
+- `GET /api/openapi.json` — OpenAPI spec
+
+### Authenticated (`/api/v1/`)
+| Resource | Endpoints |
+|----------|-----------|
+| `auth` | register, login, verify, refresh, logout, change-password, password-reset/request, password-reset/confirm |
+| `receipts` | CRUD + upload (OCR) + export (CSV/JSON) |
+| `budgets` | CRUD + status (spending vs budget) |
+| `analytics` | summary (all-time + monthly aggregations) |
+| `settings` | get, update |
+| `ai` | category prediction, ML stats |
+| `wallet` | Google Wallet pass generation |
 
 ---
 
-## Available Commands
+## Tech Stack
+
+**Backend:** Node.js 20 · TypeScript · Express · PostgreSQL 16 · Redis 7 · BullMQ · Socket.IO · Pino · Sentry · Prometheus · Joi · Zod · Jest/Vitest
+
+**Frontend:** React 18 · TypeScript · Vite 5 · Tailwind CSS · Axios · React Hot Toast
+
+**OCR:** Google Cloud Vision API
+
+**Infra:** Docker · GitHub Actions · Nginx
+
+---
+
+## Development Commands
 
 ```bash
-# Root
-npm run dev              # Start both servers
-npm run dev:frontend    # Frontend only
-npm run dev:backend     # Backend only
-npm run build           # Build both
+# Backend
+npm run dev              # Dev server with hot reload
+npm run build            # TypeScript compile
+npm test                 # Run 26 tests
+npm run test:coverage    # With coverage report
+npm run benchmark        # Query performance benchmark
+npm run migrate up       # Apply migrations
+npm run migrate down     # Rollback last migration
+npm run migrate create my-migration  # Create new migration
 
 # Frontend
-cd frontend && npm run dev    # Dev server
-cd frontend && npm run build  # Production build
-
-# Backend
-cd backend && npm run dev     # Dev with hot reload
-cd backend && npm run build   # Compile TypeScript
-cd backend && npm start       # Run compiled code
+npm run dev              # Vite dev server
+npm run build            # Production build
 ```
 
 ---
 
-## Database Schema
+## Production Deployment Checklist
 
-**users:** id, email, name, passwordhash, currency, timezone, createdAt, updatedAt
+Before deploying to production:
 
-**receipts:** id, userId, merchant, amount, category, date, imageUrl, notes, ocrData, createdAt, updatedAt
-
-**budgets:** id, userId, category, amount, period, alertEnabled, alertThreshold
-
-**user_settings:** userId, monthlyBudget, notificationsEnabled, darkMode
+- [ ] Set `NODE_ENV=production`
+- [ ] Generate strong `JWT_SECRET` (`openssl rand -hex 32`)
+- [ ] Provision Redis (`REDIS_URL` required)
+- [ ] Provision managed Postgres with backups
+- [ ] Configure `SENTRY_DSN` for error tracking
+- [ ] Set `ALLOWED_ORIGINS` to production domains only
+- [ ] Run migrations: `npm run migrate up`
+- [ ] Configure HTTPS termination at load balancer
+- [ ] Set up Prometheus scraping of `/metrics`
+- [ ] Configure K8s probes: `liveness=/health/live`, `readiness=/health/ready`
+- [ ] Set up log aggregation (ELK / Datadog / CloudWatch)
+- [ ] Configure rate-limit IPs for your load balancer
 
 ---
 
-## Environment Variables
+## Documentation
 
-### Frontend (`.env.local`)
-```env
-VITE_API_BASE_URL=http://localhost:5000
-```
-
-### Backend (`.env.local`)
-```env
-NODE_ENV=development
-PORT=5000
-JWT_SECRET=your_secret_key
-DATABASE_PATH=./data/paytrack.sqlite
-```
+- [API_TESTING.md](./backend/API_TESTING.md) — curl examples for all endpoints
+- [PROJECT_SUMMARY.md](./PROJECT_SUMMARY.md) — architecture deep-dive
+- `/api/docs` — live Swagger UI (when running)
 
 ---
 
 ## Demo Account
 
-Email: `demo@example.com`  
-Password: `password`
-
----
-
-## Development Features
-
-- Hot reload on file changes
-- TypeScript for type safety
-- Global error handling
-- Request validation with Joi
-- Rate limiting
-- CORS support
-- Comprehensive logging
-
----
-
-## Data Flow Example
-
-1. User uploads receipt image from frontend
-2. Axios POST to `/api/receipts` (proxied to backend)
-3. Middleware validates JWT token
-4. Controller receives request
-5. Service processes receipt (saves, categorizes, calculates budget impact)
-6. Returns receipt data to frontend
-7. React component re-renders with new receipt
-8. Toast notification shows success
-
----
-
-## Security
-
-- JWT authentication for API calls
-- Bcryptjs password hashing
-- HTTP security headers (Helmet)
-- CORS protection
-- Input validation
-- SQL parameter binding
-- Rate limiting
-
----
-
-## Production Deployment
-
-### Frontend Build
-```bash
-cd frontend && npm run build
-# Deploy dist/ folder to: Vercel, Netlify, AWS S3, GitHub Pages
 ```
-
-### Backend Build
-```bash
-cd backend && npm run build
-# Deploy to: Heroku, Railway, AWS EC2, DigitalOcean, Render
+Email:    demo@example.com
+Password: password
 ```
-
----
-
-## Troubleshooting
-
-### Port Already in Use
-```bash
-# Windows
-netstat -ano | findstr :5000
-taskkill /PID <PID> /F
-```
-
-### Dependencies Issue
-```bash
-npm cache clean --force
-cd frontend && npm install
-cd ../backend && npm install
-```
-
----
-
-## Project Status
-
-✅ Production Ready - Clean, organized, and fully functional
 
 ---
 
 ## License
 
-MIT License
-
----
-
-**Ready to develop? Start with `npm run dev` and open http://localhost:5173** 🚀
+MIT

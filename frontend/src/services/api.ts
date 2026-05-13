@@ -1,7 +1,7 @@
 import axios, { AxiosError } from 'axios';
 import { Receipt } from '../types/receipt';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
 
 export interface ApiError {
   message: string;
