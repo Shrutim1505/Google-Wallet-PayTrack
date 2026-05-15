@@ -1,6 +1,4 @@
-/**
- * Application-wide constants
- */
+
 
 export const RECEIPT_CATEGORIES = [
   'Food',

@@ -17,10 +17,7 @@ const KEYWORD_MAP: Record<string, string[]> = {
 };
 
 export class CategorizationService {
-  /**
-   * Categorize a receipt using AI smart categorization as primary,
-   * falling back to keyword matching if AI returns 'Other'.
-   */
+  
   categorizeReceipt(vendor: string, items?: string[]): string {
     // Primary: AI-powered smart categorization
     const aiResult = aiService.smartCategorize(vendor, items);

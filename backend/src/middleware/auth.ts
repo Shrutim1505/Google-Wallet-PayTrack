@@ -16,20 +16,17 @@ declare global {
   }
 }
 
-/**
- * Authentication middleware — verifies JWT and attaches user + permissions to request.
- * Zero DB calls: permissions are embedded in the JWT at login time.
- */
+const BEARER_PREFIX = 'Bearer ';
+
 export async function authMiddleware(req: Request, _res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
 
-  if (!authHeader?.startsWith('Bearer ')) {
+  if (!authHeader?.startsWith(BEARER_PREFIX)) {
     return next(AppError.unauthorized('No token provided'));
   }
 
-  const token = authHeader.slice(7);
+  const token = authHeader.slice(BEARER_PREFIX.length);
 
-  // Check blacklist first (logged-out tokens)
   if (await isTokenBlacklisted(token)) {
     return next(AppError.unauthorized('Token has been revoked'));
   }

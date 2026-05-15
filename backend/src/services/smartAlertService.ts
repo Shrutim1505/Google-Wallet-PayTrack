@@ -12,10 +12,6 @@ export interface SmartAlert {
   createdAt: string;
 }
 
-/**
- * Smart notification engine that generates alerts based on spending patterns.
- * Runs analysis on receipt creation and can generate periodic digests.
- */
 export class SmartAlertService {
   /** Generate alerts after a new receipt is added */
   async analyzeNewReceipt(userId: string, merchant: string, amount: number, category: string) {

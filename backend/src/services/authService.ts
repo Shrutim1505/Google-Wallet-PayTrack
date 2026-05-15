@@ -6,8 +6,11 @@ import { environment } from '../config/environment.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { blacklistToken, isTokenBlacklisted, remainingTokenLifetime } from './tokenBlacklist.js';
 
+const BCRYPT_ROUNDS = 12;
+const DEFAULT_USER_ROLE = 'user';
+
 export interface TokenPayload {
-  sub: string;           // user id
+  sub: string;
   email: string;
   roles: string[];
   permissions: string[];
@@ -26,13 +29,16 @@ export class AuthService {
   async register(email: string, password: string, name: string): Promise<AuthResult> {
     const pool = getPool();
 
-    const { rows: existing } = await pool.query('SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL', [email]);
+    const { rows: existing } = await pool.query(
+      'SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL',
+      [email]
+    );
     if (existing.length > 0) {
       throw AppError.conflict('Email already registered');
     }
 
     const userId = uuidv4();
-    const passwordHash = await bcrypt.hash(password, 12);
+    const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
     await runTransaction(async (client) => {
       await client.query(
@@ -40,9 +46,10 @@ export class AuthService {
         [userId, email, name, passwordHash]
       );
       await client.query('INSERT INTO user_settings (user_id) VALUES ($1)', [userId]);
-      await client.query(`
-        INSERT INTO user_roles (user_id, role_id) SELECT $1, id FROM roles WHERE name = 'user'
-      `, [userId]);
+      await client.query(
+        'INSERT INTO user_roles (user_id, role_id) SELECT $1, id FROM roles WHERE name = $2',
+        [userId, DEFAULT_USER_ROLE]
+      );
     });
 
     return this.buildAuthResult(userId, email, name);
@@ -56,7 +63,6 @@ export class AuthService {
     );
 
     if (rows.length === 0) {
-      // Same error for missing user and wrong password — prevents user enumeration
       throw AppError.unauthorized('Invalid email or password');
     }
 
@@ -90,7 +96,6 @@ export class AuthService {
     );
     if (rows.length === 0) throw AppError.unauthorized('User no longer exists');
 
-    // Rotate: blacklist old refresh token for its remaining lifetime
     if (decoded.exp) {
       await blacklistToken(refreshToken, remainingTokenLifetime(decoded.exp));
     }
@@ -108,21 +113,27 @@ export class AuthService {
           await blacklistToken(token, remainingTokenLifetime(decoded.exp));
         }
       } catch {
-        // Token is malformed, ignore
+        // ignore malformed tokens during best-effort logout
       }
     }
   }
 
   async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
     const pool = getPool();
-    const { rows } = await pool.query('SELECT password_hash FROM users WHERE id = $1 AND deleted_at IS NULL', [userId]);
+    const { rows } = await pool.query(
+      'SELECT password_hash FROM users WHERE id = $1 AND deleted_at IS NULL',
+      [userId]
+    );
     if (rows.length === 0) throw AppError.notFound('User');
 
     const valid = await bcrypt.compare(currentPassword, rows[0].password_hash);
     if (!valid) throw AppError.unauthorized('Current password is incorrect');
 
-    const newHash = await bcrypt.hash(newPassword, 12);
-    await pool.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [newHash, userId]);
+    const newHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await pool.query(
+      'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2',
+      [newHash, userId]
+    );
   }
 
   async verifyToken(token: string): Promise<TokenPayload> {
@@ -136,11 +147,13 @@ export class AuthService {
     }
   }
 
-  private async getUserRolesAndPermissions(userId: string): Promise<{ roles: string[]; permissions: string[] }> {
+  private async getUserRolesAndPermissions(
+    userId: string
+  ): Promise<{ roles: string[]; permissions: string[] }> {
     const pool = getPool();
     const [rolesResult, permsResult] = await Promise.all([
       pool.query(
-        `SELECT r.name FROM roles r JOIN user_roles ur ON ur.role_id = r.id WHERE ur.user_id = $1`,
+        'SELECT r.name FROM roles r JOIN user_roles ur ON ur.role_id = r.id WHERE ur.user_id = $1',
         [userId]
       ),
       pool.query(
@@ -166,7 +179,12 @@ export class AuthService {
     };
   }
 
-  private generateTokens(userId: string, email: string, roles: string[], permissions: string[]): { token: string; refreshToken: string } {
+  private generateTokens(
+    userId: string,
+    email: string,
+    roles: string[],
+    permissions: string[]
+  ): { token: string; refreshToken: string } {
     const accessOpts: SignOptions = { expiresIn: environment.JWT_ACCESS_EXPIRY as any };
     const refreshOpts: SignOptions = { expiresIn: environment.JWT_REFRESH_EXPIRY as any };
 

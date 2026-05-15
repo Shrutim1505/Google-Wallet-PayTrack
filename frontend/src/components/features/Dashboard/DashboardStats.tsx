@@ -25,7 +25,7 @@ export function DashboardStats({ totalSpent, totalReceipts, monthlyBudget, budge
             <AlertCircle className={`w-6 h-6 ${budgetUsed > 80 ? 'text-red-600' : 'text-yellow-600'}`} />
           </div>
         </div>
-        {budgetUsed > 80 && <p className="text-xs text-red-600 mt-3">⚠️ Budget limit approaching</p>}
+        {budgetUsed > 80 && <p className="text-xs text-red-600 mt-3">️ Budget limit approaching</p>}
       </div>
     </div>
   );

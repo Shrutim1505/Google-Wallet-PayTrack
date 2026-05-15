@@ -13,11 +13,6 @@ interface RecurringPattern {
   totalSpent: number;
 }
 
-/**
- * Detects recurring expenses using interval analysis.
- * Groups receipts by merchant, computes inter-payment intervals,
- * and uses coefficient of variation to determine regularity.
- */
 export class RecurringService {
   async detectRecurring(userId: string): Promise<RecurringPattern[]> {
     const pool = getPool();

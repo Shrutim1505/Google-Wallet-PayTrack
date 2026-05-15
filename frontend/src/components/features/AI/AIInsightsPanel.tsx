@@ -95,7 +95,7 @@ export function AIInsightsPanel() {
               <AlertTriangle className="w-4 h-4" /> Anomaly Alerts
             </h4>
             {insights.anomalies.map((a, i) => (
-              <p key={i} className="text-xs text-gray-600 pl-5">⚠️ {a.message}</p>
+              <p key={i} className="text-xs text-gray-600 pl-5">️ {a.message}</p>
             ))}
           </div>
         )}

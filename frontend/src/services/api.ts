@@ -15,14 +15,12 @@ const apiClient = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// ── Request interceptor: attach access token ──
 apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem('auth_token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-// ── Response interceptor: auto-refresh on 401 ──
 let isRefreshing = false;
 let failedQueue: Array<{ resolve: (v: any) => void; reject: (e: any) => void }> = [];
 
@@ -39,7 +37,6 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       const refreshToken = localStorage.getItem('refresh_token');
 
-      // No refresh token or this is already a refresh attempt — logout
       if (!refreshToken || originalRequest.url?.includes('/auth/refresh')) {
         localStorage.removeItem('auth_token');
         localStorage.removeItem('refresh_token');
@@ -242,7 +239,6 @@ export const api = {
     } catch (error) { handleApiError(error); }
   },
 
-  // ── Recurring Expenses ──
   getRecurring: async () => {
     try {
       const response = await apiClient.get('/features/recurring');
@@ -250,7 +246,6 @@ export const api = {
     } catch (error) { handleApiError(error); }
   },
 
-  // ── Split Expenses ──
   createSplit: async (receiptId: string, participants: Array<{ name: string; amount: number; paid: boolean }>, splitType = 'equal') => {
     try {
       const response = await apiClient.post('/features/splits', { receiptId, participants, splitType });
@@ -279,7 +274,6 @@ export const api = {
     } catch (error) { handleApiError(error); }
   },
 
-  // ── Duplicate Detection ──
   checkDuplicate: async (merchant: string, amount: number, date: string) => {
     try {
       const response = await apiClient.post('/features/duplicates/check', { merchant, amount, date });
@@ -287,7 +281,6 @@ export const api = {
     } catch (error) { handleApiError(error); }
   },
 
-  // ── Smart Alerts ──
   getSmartAlerts: async () => {
     try {
       const response = await apiClient.get('/features/alerts');
@@ -309,7 +302,6 @@ export const api = {
     } catch (error) { handleApiError(error); }
   },
 
-  // ── Currency ──
   convertCurrency: async (amount: number, from: string, to: string) => {
     try {
       const response = await apiClient.post('/features/currency/convert', { amount, from, to });
@@ -324,7 +316,6 @@ export const api = {
     } catch (error) { handleApiError(error); }
   },
 
-  // ── ML ──
   mlPredict: async (merchant: string, items: string[] = []) => {
     try {
       const response = await apiClient.post('/features/ml/predict', { merchant, items });

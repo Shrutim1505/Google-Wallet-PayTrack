@@ -17,13 +17,11 @@ const smartAlertService = new SmartAlertService();
 const currencyService = new CurrencyService();
 const mlService = new MLService();
 
-// ── Recurring Expenses ──
 export const getRecurring = asyncHandler(async (req: Request, res: Response) => {
   const patterns = await recurringService.detectRecurring(req.userId!);
   res.json({ success: true, data: patterns });
 });
 
-// ── Split Expenses ──
 export const createSplit = asyncHandler(async (req: Request, res: Response) => {
   const { receiptId, participants, splitType } = req.body;
   if (!receiptId || !participants?.length) throw new AppError(HTTP_STATUS.BAD_REQUEST, 'receiptId and participants required');
@@ -49,7 +47,6 @@ export const markSplitPaid = asyncHandler(async (req: Request, res: Response) =>
   res.json({ success: true, data: split });
 });
 
-// ── Duplicate Detection ──
 export const checkDuplicate = asyncHandler(async (req: Request, res: Response) => {
   const { merchant, amount, date } = req.body;
   if (!merchant || !amount) throw new AppError(HTTP_STATUS.BAD_REQUEST, 'merchant and amount required');
@@ -57,7 +54,6 @@ export const checkDuplicate = asyncHandler(async (req: Request, res: Response) =
   res.json({ success: true, data: duplicates });
 });
 
-// ── Smart Alerts ──
 export const getAlerts = asyncHandler(async (req: Request, res: Response) => {
   const alerts = await smartAlertService.getAlerts(req.userId!);
   const unreadCount = await smartAlertService.getUnreadCount(req.userId!);
@@ -74,7 +70,6 @@ export const generateDigest = asyncHandler(async (req: Request, res: Response) =
   res.json({ success: true, data: digest });
 });
 
-// ── Currency ──
 export const convertCurrency = asyncHandler(async (req: Request, res: Response) => {
   const { amount, from, to } = req.body;
   if (!amount || !from || !to) throw new AppError(HTTP_STATUS.BAD_REQUEST, 'amount, from, and to required');
@@ -93,7 +88,6 @@ export const getSupportedCurrencies = asyncHandler(async (_req: Request, res: Re
   res.json({ success: true, data: currencies });
 });
 
-// ── ML ──
 export const mlPredict = asyncHandler(async (req: Request, res: Response) => {
   const { merchant, items } = req.body;
   if (!merchant) throw new AppError(HTTP_STATUS.BAD_REQUEST, 'merchant required');

@@ -19,7 +19,6 @@ export function useAuth() {
     if (token && storedUser && !isTokenExpired(token)) {
       try { setUser(JSON.parse(storedUser)); } catch { removeTokenFromStorage(); }
     } else if (token && isTokenExpired(token) && localStorage.getItem('refresh_token')) {
-      // Token expired but refresh token exists — the API interceptor will handle refresh
       if (storedUser) {
         try { setUser(JSON.parse(storedUser)); } catch { removeTokenFromStorage(); }
       }

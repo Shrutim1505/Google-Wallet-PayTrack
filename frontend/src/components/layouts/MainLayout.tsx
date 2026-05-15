@@ -112,12 +112,12 @@ export function MainLayout() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
       <Header onSettingsClick={() => setShowSettings(true)} />
-      <Navigation 
-        items={navigationItems} 
-        activeTab={activeTab} 
+      <Navigation
+        items={navigationItems}
+        activeTab={activeTab}
         onTabChange={(tab) => setActiveTab(tab as TabType)}
       />
-      
+
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {activeTab === 'dashboard' && (
           <div className="space-y-8">
@@ -126,7 +126,7 @@ export function MainLayout() {
               <p className="text-gray-600 mt-1">Welcome back! Here's your spending overview</p>
             </div>
 
-            <DashboardStats 
+            <DashboardStats
               totalSpent={totalSpent}
               totalReceipts={receipts.length}
               monthlyBudget={monthlyBudget}
@@ -141,8 +141,8 @@ export function MainLayout() {
                 ) : (
                   <div className="space-y-3">
                     {receipts.slice(0, 5).map((receipt) => (
-                      <div 
-                        key={receipt.id} 
+                      <div
+                        key={receipt.id}
                         onClick={() => setSelectedReceipt(receipt)}
                         className="flex items-center justify-between p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-all"
                       >
@@ -154,7 +154,7 @@ export function MainLayout() {
                         </div>
                         <div className="flex items-center gap-2">
                           <p className="font-semibold text-blue-600">{formatCurrency(receipt.amount)}</p>
-                          <span className="text-xs text-teal-600" title="Synced to Wallet">💳</span>
+                          <span className="text-xs text-teal-600" title="Synced to Wallet"></span>
                         </div>
                       </div>
                     ))}
@@ -213,22 +213,22 @@ export function MainLayout() {
                   className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all font-medium flex items-center gap-2">
                   <Download className="w-4 h-4" /> Export CSV
                 </button>
-                <button 
+                <button
                   onClick={() => setShowAddManual(true)}
                   className="px-6 py-2 border-2 border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-all font-medium"
                 >
                   + Manual Entry
                 </button>
-                <button 
+                <button
                   onClick={() => setShowUpload(true)}
                   className="px-6 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all font-medium"
                 >
-                  📷 Upload Receipt
+                   Upload Receipt
                 </button>
               </div>
             </div>
 
-            <SearchAndFilter 
+            <SearchAndFilter
               onSearch={setSearchQuery}
               onFilter={setFilters}
               searchQuery={searchQuery}
@@ -246,14 +246,14 @@ export function MainLayout() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredReceipts.map((receipt) => (
-                  <div 
-                    key={receipt.id} 
+                  <div
+                    key={receipt.id}
                     onClick={() => setSelectedReceipt(receipt)}
                     className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 hover:shadow-md transition-all cursor-pointer"
                   >
                     <div className="flex items-start justify-between">
                       <h3 className="font-semibold text-gray-900">{receipt.merchant}</h3>
-                      <span className="text-xs text-teal-600" title="Synced to Wallet">💳</span>
+                      <span className="text-xs text-teal-600" title="Synced to Wallet"></span>
                     </div>
                     <p className="text-sm text-gray-600 mt-2">{receipt.category}</p>
                     <p className="text-2xl font-bold text-blue-600 mt-4">{formatCurrency(receipt.amount)}</p>
@@ -290,7 +290,7 @@ export function MainLayout() {
 
         {/* Upload Modal */}
         {showUpload && (
-          <ReceiptUpload 
+          <ReceiptUpload
             onUpload={handleUploadReceipt}
             onClose={() => setShowUpload(false)}
           />
@@ -306,7 +306,7 @@ export function MainLayout() {
 
         {/* Receipt Detail Modal */}
         {selectedReceipt && (
-          <ReceiptModal 
+          <ReceiptModal
             receipt={selectedReceipt}
             onClose={() => setSelectedReceipt(null)}
             onUpdate={(updated) => { updateReceipt(updated.id, updated); setSelectedReceipt(updated); }}
@@ -316,7 +316,7 @@ export function MainLayout() {
 
         {/* Settings Modal */}
         {showSettings && (
-          <SettingsPage 
+          <SettingsPage
             settings={settings}
             onSave={saveSettings}
             onClose={() => setShowSettings(false)}
@@ -458,7 +458,7 @@ function ManualReceiptForm({ onClose, onCreated }: { onClose: () => void; onCrea
 
         {duplicates.length > 0 && (
           <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-            <p className="text-sm font-semibold text-amber-800 mb-2">⚠️ Possible duplicates found:</p>
+            <p className="text-sm font-semibold text-amber-800 mb-2">️ Possible duplicates found:</p>
             {duplicates.map((d, i) => (
               <p key={i} className="text-xs text-amber-700">
                 {d.merchant} — {formatCurrency(d.amount)} on {d.date} ({d.similarity}% match)

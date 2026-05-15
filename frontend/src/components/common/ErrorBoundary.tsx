@@ -53,7 +53,7 @@ export class ErrorBoundary extends Component<Props, State> {
           <div style={{
             fontSize: '3rem',
             marginBottom: '1rem',
-          }}>⚠️</div>
+          }}>️</div>
           <h1 style={{ fontSize: '1.5rem', marginBottom: '1rem', color: '#1f2937' }}>
             Something went wrong
           </h1>

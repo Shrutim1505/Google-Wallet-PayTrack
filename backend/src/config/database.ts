@@ -107,10 +107,6 @@ export async function closeDatabase(): Promise<void> {
   if (pool) await pool.end();
 }
 
-/**
- * Run multiple statements inside a PostgreSQL transaction.
- * Provides ACID guarantees via BEGIN/COMMIT/ROLLBACK.
- */
 export async function runTransaction<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect();
   try {

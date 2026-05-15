@@ -1,10 +1,6 @@
 import Joi from 'joi';
 import { RECEIPT_CATEGORIES, BUDGET_PERIODS, CURRENCIES } from './constants.js';
 
-/**
- * Reusable validation schemas using Joi
- */
-
 export const schemas = {
   // Auth
   register: Joi.object({
@@ -106,9 +102,6 @@ export const schemas = {
   }),
 };
 
-/**
- * Validate data against schema
- */
 export const validate = (data: any, schema: Joi.ObjectSchema) => {
   const { value, error } = schema.validate(data, {
     abortEarly: false,

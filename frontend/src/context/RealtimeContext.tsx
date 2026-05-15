@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useEffect, ReactNode } from 'react';
 import { useSocket, RTEventHandler } from '../hooks/useSocket';
 import toast from 'react-hot-toast';
 
@@ -17,12 +17,12 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     const unsubs = [
       subscribe('receipt:created', (data) => {
         const merchant = data?.receipt?.merchant || 'New receipt';
-        toast.success(`📄 ${merchant} added in real-time`, { id: `rt-${data?.receipt?.id}` });
+        toast.success(` ${merchant} added in real-time`, { id: `rt-${data?.receipt?.id}` });
       }),
       subscribe('alert:new', (data) => {
         const alerts = data?.alerts || [];
         for (const alert of alerts) {
-          const icon = alert.severity === 'critical' ? '🚨' : alert.severity === 'warning' ? '⚠️' : 'ℹ️';
+          const icon = alert.severity === 'critical' ? '' : alert.severity === 'warning' ? '️' : 'ℹ️';
           toast(alert.message, {
             icon,
             duration: 6000,
@@ -31,10 +31,9 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         }
       }),
       subscribe('settings:updated', () => {
-        toast.success('⚙️ Settings synced across devices', { id: 'rt-settings' });
+        toast.success('️ Settings synced across devices', { id: 'rt-settings' });
       }),
       subscribe('connected', () => {
-        // Silent — just confirms connection
       }),
     ];
 
