@@ -28,6 +28,7 @@ router.use(authMiddleware);
 
 router.post('/', requirePermission('receipts:create'), idempotency, validateRequest(schemas.createReceipt, 'body'), receiptController.createReceipt);
 router.post('/upload', requirePermission('receipts:create'), uploadLimiter, idempotency, upload.single('file'), receiptController.uploadReceipt);
+router.get('/autocomplete', requirePermission('receipts:read'), receiptController.merchantAutocomplete);
 router.get('/export', requirePermission('receipts:read'), receiptController.exportReceipts);
 router.get('/', requirePermission('receipts:read'), receiptController.getReceipts);
 router.get('/:id', requirePermission('receipts:read'), receiptController.getReceipt);

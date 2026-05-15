@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { ReceiptService, ReceiptFilters } from '../services/receiptService.js';
 import { CategorizationService } from '../services/categorizationService.js';
 import { OCRService } from '../services/ocrService.js';
+import { merchantAutocomplete as merchantAutocompleteService } from '../services/merchantAutocompleteService.js';
+import { duplicateBloomFilter } from '../services/duplicateBloomService.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
@@ -68,6 +70,10 @@ export const createReceipt = asyncHandler(async (req: Request, res: Response) =>
     tags: Array.isArray(tags) ? tags : [],
     isManualEntry: isManualEntry ?? true,
   });
+
+  // Update in-memory data structures (Trie for autocomplete, Bloom for dedup)
+  merchantAutocompleteService.recordMerchant(userId, finalMerchant);
+  duplicateBloomFilter.add(userId, finalMerchant, finalAmount, receipt.date);
 
   logger.info({ msg: 'Receipt created', userId, receiptId: receipt.id });
   emitToUser(userId, 'receipt:created', { receipt: toFrontendReceipt(receipt) });
@@ -201,5 +207,28 @@ export const deleteReceipt = asyncHandler(async (req: Request, res: Response) =>
     success: true,
     data: null,
     message: 'Receipt deleted successfully',
+  });
+});
+
+/**
+ * GET /api/receipts/autocomplete?q=prefix
+ * Trie-backed merchant autocomplete — O(L) prefix lookup, no DB hit
+ * after the initial trie build (cached for 10 minutes).
+ */
+export const merchantAutocomplete = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.userId!;
+  const prefix = String(req.query.q || '').trim();
+  const limit = Math.min(20, Math.max(1, parseInt(String(req.query.limit || '10'), 10)));
+
+  if (!prefix) {
+    return res.status(HTTP_STATUS.OK).json({ success: true, data: [] });
+  }
+
+  const suggestions = await merchantAutocompleteService.search(userId, prefix, limit);
+
+  res.status(HTTP_STATUS.OK).json({
+    success: true,
+    data: suggestions,
+    message: 'Suggestions retrieved',
   });
 });

@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "benchmark": "tsx src/benchmarks/db-benchmark.ts",
+    "benchmark:algorithms": "tsx src/benchmarks/algorithms-benchmark.ts",
     "migrate": "node-pg-migrate --migrations-dir migrations --envPath .env.local",
     "migrate:up": "npm run migrate -- up",
     "migrate:down": "npm run migrate -- down",
