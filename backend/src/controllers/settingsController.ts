@@ -1,69 +1,62 @@
 import { Request, Response } from 'express';
 import { SettingsService } from '../services/settingsService.js';
-import { getDatabase } from '../config/database.js';
+import { getPool } from '../config/database.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
+import { logger } from '../utils/logger.js';
+import { HTTP_STATUS } from '../utils/constants.js';
+import { emitToUser } from '../config/websocket.js';
 
 const settingsService = new SettingsService();
 
 async function getUserPublicProfile(userId: string) {
-  const db = getDatabase();
-  const row = await db.get('SELECT id, email, name FROM users WHERE id = ?', [userId]);
-  return row ? { id: row.id, email: row.email, name: row.name } : { id: userId, email: '', name: 'User' };
+  const pool = getPool();
+  const { rows } = await pool.query('SELECT id, email, name FROM users WHERE id = $1', [userId]);
+  return rows[0] || { id: userId, email: '', name: 'User' };
 }
 
-export async function getSettings(req: Request, res: Response) {
-  try {
-    const userId = (req as any).userId;
-    const [profile, settings] = await Promise.all([getUserPublicProfile(userId), settingsService.getUserSettings(userId)]);
+export const getSettings = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.userId!;
+  const [profile, settings] = await Promise.all([
+    getUserPublicProfile(userId),
+    settingsService.getUserSettings(userId),
+  ]);
 
-    // Keep response shape compatible with frontend's `data.settings`.
-    res.json({
-      success: true,
-      data: {
-        settings: {
-          name: profile.name,
-          email: profile.email,
-          monthlyBudget: settings.monthlyBudget,
-          notificationsEnabled: Boolean(settings.notificationsEnabled),
-          darkMode: Boolean(settings.darkMode),
-        },
+  res.status(HTTP_STATUS.OK).json({
+    success: true,
+    data: {
+      settings: {
+        name: profile.name, email: profile.email,
+        monthlyBudget: settings.monthlyBudget,
+        notificationsEnabled: settings.notificationsEnabled,
+        darkMode: settings.darkMode,
       },
-    });
-  } catch (error: any) {
-    res.status(400).json({ success: false, error: error.message });
+    },
+    message: 'Settings retrieved successfully',
+  });
+});
+
+export const updateSettings = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.userId!;
+  const updates = req.body || {};
+
+  if (updates.name || updates.email) {
+    const pool = getPool();
+    await pool.query(
+      `UPDATE users SET name = COALESCE($1, name), email = COALESCE($2, email), updated_at = NOW() WHERE id = $3`,
+      [updates.name ?? null, updates.email ?? null, userId]
+    );
   }
-}
 
-export async function updateSettings(req: Request, res: Response) {
-  try {
-    const userId = (req as any).userId;
-    const updates = req.body || {};
+  const savedSettings = await settingsService.upsertUserSettings(userId, updates);
+  const profile = await getUserPublicProfile(userId);
 
-    // Update profile fields if provided.
-    if (updates.name || updates.email) {
-      const db = getDatabase();
-      await db.run(
-        `UPDATE users SET name = COALESCE(?, name), email = COALESCE(?, email) WHERE id = ?`,
-        [updates.name ?? null, updates.email ?? null, userId]
-      );
-    }
+  const settingsPayload = {
+    name: profile.name, email: profile.email,
+    monthlyBudget: savedSettings.monthlyBudget,
+    notificationsEnabled: savedSettings.notificationsEnabled,
+    darkMode: savedSettings.darkMode,
+  };
 
-    const savedSettings = await settingsService.upsertUserSettings(userId, updates);
-    const profile = await getUserPublicProfile(userId);
-
-    res.json({
-      success: true,
-      data: {
-        settings: {
-          name: profile.name,
-          email: profile.email,
-          monthlyBudget: savedSettings.monthlyBudget,
-          notificationsEnabled: Boolean(savedSettings.notificationsEnabled),
-          darkMode: Boolean(savedSettings.darkMode),
-        },
-      },
-    });
-  } catch (error: any) {
-    res.status(400).json({ success: false, error: error.message });
-  }
-}
-
+  emitToUser(userId, 'settings:updated', { settings: settingsPayload });
+  res.status(HTTP_STATUS.OK).json({ success: true, data: { settings: settingsPayload }, message: 'Settings updated successfully' });
+});
