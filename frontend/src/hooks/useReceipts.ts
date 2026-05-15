@@ -3,8 +3,6 @@ import { Receipt } from '../types/receipt';
 import { api, ApiError } from '../services/api';
 import { useRealtime } from '../context/RealtimeContext';
 
-const enableMockFallback = import.meta.env.VITE_ENABLE_MOCK_FALLBACK === 'true';
-
 const parseAmount = (value: unknown): number => {
   if (typeof value === 'number') return value;
   const parsed = Number(value);
@@ -59,7 +57,6 @@ export function useReceipts() {
     setError(null);
     try {
       const uploadedReceipt = await api.uploadReceipt(file);
-      // Don't add locally — the WebSocket event will handle it
       // But if WS is not connected, add it directly
       setReceipts((prev) => {
         if (prev.some(r => r.id === uploadedReceipt.id)) return prev;
@@ -98,7 +95,6 @@ export function useReceipts() {
   // Initial fetch
   useEffect(() => { fetchReceipts(); }, [fetchReceipts]);
 
-  // ── Real-time event listeners ──
   useEffect(() => {
     if (!subscribe) return;
 
@@ -107,7 +103,6 @@ export function useReceipts() {
         if (data?.receipt) {
           setReceipts((prev) => {
             const normalized = normalizeReceipt(data.receipt);
-            // Deduplicate — might already be added by the HTTP response
             if (prev.some(r => r.id === normalized.id)) return prev;
             return [normalized, ...prev];
           });

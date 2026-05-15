@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
 
-// Initialize Sentry before any other imports (for error capture during startup)
 import { initializeSentry } from './config/sentry.js';
 initializeSentry();
 
@@ -13,9 +12,12 @@ import { initializeWebSocket } from './config/websocket.js';
 import { environment } from './config/environment.js';
 import { logger } from './utils/logger.js';
 
+const SHUTDOWN_TIMEOUT_MS = 15_000;
+const UPLOADS_DIR = 'uploads';
+
 async function start() {
   try {
-    fs.mkdirSync(path.resolve(process.cwd(), 'uploads'), { recursive: true });
+    fs.mkdirSync(path.resolve(process.cwd(), UPLOADS_DIR), { recursive: true });
 
     logger.info('Initializing cache...');
     initializeCache();
@@ -38,11 +40,9 @@ async function start() {
       });
     });
 
-    // ── Graceful shutdown ──
     const shutdown = async (signal: string) => {
-      logger.info(`${signal} received — shutting down gracefully`);
+      logger.info(`${signal} received, shutting down gracefully`);
 
-      // Stop accepting new connections
       server.close(async () => {
         try {
           await closeCache();
@@ -55,22 +55,20 @@ async function start() {
         }
       });
 
-      // Force exit after 15s if connections hang
       setTimeout(() => {
-        logger.error('Forced shutdown after 15s timeout');
+        logger.error('Forced shutdown after timeout');
         process.exit(1);
-      }, 15_000).unref();
+      }, SHUTDOWN_TIMEOUT_MS).unref();
     };
 
     process.on('SIGTERM', () => shutdown('SIGTERM'));
     process.on('SIGINT', () => shutdown('SIGINT'));
 
-    // Catch unhandled errors to prevent silent failures
-    process.on('uncaughtException', (err) => {
+    process.on('uncaughtException', err => {
       logger.fatal({ msg: 'Uncaught exception', err: err.message, stack: err.stack });
       process.exit(1);
     });
-    process.on('unhandledRejection', (reason) => {
+    process.on('unhandledRejection', reason => {
       logger.fatal({ msg: 'Unhandled promise rejection', reason });
       process.exit(1);
     });

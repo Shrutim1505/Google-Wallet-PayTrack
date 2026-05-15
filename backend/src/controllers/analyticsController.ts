@@ -6,10 +6,6 @@ import { HTTP_STATUS } from '../utils/constants.js';
 
 const analyticsService = new AnalyticsService();
 
-/**
- * Get analytics dashboard data
- * GET /api/analytics
- */
 export const getAnalytics = asyncHandler(async (req: Request, res: Response) => {
   const userId = req.userId!;
   const year = parseInt(req.query.year as string) || new Date().getFullYear();

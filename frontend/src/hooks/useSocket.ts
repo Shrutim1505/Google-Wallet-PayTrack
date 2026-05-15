@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import toast from 'react-hot-toast';
+
 
 const WS_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace('/api', '');
 
@@ -58,7 +58,6 @@ export function useSocket(): UseSocketReturn {
       setConnected(false);
       console.log('[WS] Disconnected:', reason);
       if (reason === 'io server disconnect') {
-        // Server kicked us — likely token expired
         socket.connect();
       }
     });
@@ -71,7 +70,6 @@ export function useSocket(): UseSocketReturn {
       }
     });
 
-    // ── Listen for all real-time events and dispatch ──
     const events = [
       'receipt:created', 'receipt:updated', 'receipt:deleted',
       'alert:new', 'budget:warning',
@@ -92,7 +90,6 @@ export function useSocket(): UseSocketReturn {
     };
   }, [dispatch]);
 
-  // Subscribe to a specific event — returns an unsubscribe function
   const subscribe = useCallback((event: string, handler: RTEventHandler): (() => void) => {
     if (!handlersRef.current.has(event)) {
       handlersRef.current.set(event, new Set());

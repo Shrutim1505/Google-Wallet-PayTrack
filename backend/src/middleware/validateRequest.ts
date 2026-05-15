@@ -2,24 +2,17 @@ import { Request, Response, NextFunction } from 'express';
 import Joi from 'joi';
 import { AppError } from './errorHandler.js';
 
-/**
- * Middleware factory to validate request body, params, or query.
- * Throws AppError.validation — caught by global error handler which returns RFC 7807.
- */
-export const validateRequest = (
-  schema: Joi.ObjectSchema,
-  schemaType: 'body' | 'params' | 'query' = 'body'
-) => {
-  return (req: Request, _res: Response, next: NextFunction) => {
-    const dataToValidate = req[schemaType];
+type SchemaType = 'body' | 'params' | 'query';
 
-    const { value, error } = schema.validate(dataToValidate, {
+export const validateRequest = (schema: Joi.ObjectSchema, schemaType: SchemaType = 'body') => {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    const { value, error } = schema.validate(req[schemaType], {
       abortEarly: false,
       stripUnknown: true,
     });
 
     if (error) {
-      const errors = error.details.map((d) => ({
+      const errors = error.details.map(d => ({
         field: d.path.join('.'),
         message: d.message,
       }));

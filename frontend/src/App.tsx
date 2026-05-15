@@ -20,7 +20,7 @@ function AppContent() {
       <MainLayout />
     </RealtimeProvider>
   ) : (
-    <AuthLayout 
+    <AuthLayout
       onLoginSuccess={() => {
         setRefresh((prev) => prev + 1);
       }}

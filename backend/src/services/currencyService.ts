@@ -6,10 +6,6 @@ interface ExchangeRates { [currency: string]: number }
 let rateCache: { base: string; rates: ExchangeRates; fetchedAt: number } | null = null;
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
-/**
- * Currency conversion service using free exchange rate API.
- * Caches rates for 1 hour to minimize API calls.
- */
 export class CurrencyService {
   async getRates(base = 'INR'): Promise<ExchangeRates> {
     if (rateCache && rateCache.base === base && Date.now() - rateCache.fetchedAt < CACHE_TTL) {

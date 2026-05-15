@@ -2,10 +2,6 @@ import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger.js';
 import { environment } from '../config/environment.js';
 
-/**
- * RFC 7807 Problem Details for HTTP APIs
- * https://datatracker.ietf.org/doc/html/rfc7807
- */
 export interface ProblemDetails {
   type: string;
   title: string;
@@ -17,6 +13,20 @@ export interface ProblemDetails {
   errors?: Array<{ field: string; message: string }>;
   [key: string]: unknown;
 }
+
+const STATUS_CODE_MAP: Record<number, string> = {
+  400: 'BAD_REQUEST',
+  401: 'UNAUTHORIZED',
+  403: 'FORBIDDEN',
+  404: 'NOT_FOUND',
+  409: 'CONFLICT',
+  422: 'VALIDATION_ERROR',
+  429: 'RATE_LIMITED',
+  500: 'INTERNAL_ERROR',
+  503: 'SERVICE_UNAVAILABLE',
+};
+
+const ERROR_TYPE_BASE = 'https://paytrack.dev/errors';
 
 export class AppError extends Error {
   public code: string;
@@ -30,30 +40,13 @@ export class AppError extends Error {
     details?: Record<string, unknown>,
     errors?: Array<{ field: string; message: string }>
   ) {
-    // Support legacy 2-arg form: new AppError(404, 'Not found')
-    // And new 3-arg form: new AppError(404, 'NOT_FOUND', 'Resource not found')
     const isLegacy = message === undefined;
     super(isLegacy ? codeOrMessage : message);
-    this.code = isLegacy ? AppError.statusToCode(statusCode) : codeOrMessage;
+    this.code = isLegacy ? STATUS_CODE_MAP[statusCode] || 'ERROR' : codeOrMessage;
     this.details = details;
     this.errors = errors;
     this.name = 'AppError';
     Object.setPrototypeOf(this, AppError.prototype);
-  }
-
-  private static statusToCode(status: number): string {
-    const map: Record<number, string> = {
-      400: 'BAD_REQUEST',
-      401: 'UNAUTHORIZED',
-      403: 'FORBIDDEN',
-      404: 'NOT_FOUND',
-      409: 'CONFLICT',
-      422: 'VALIDATION_ERROR',
-      429: 'RATE_LIMITED',
-      500: 'INTERNAL_ERROR',
-      503: 'SERVICE_UNAVAILABLE',
-    };
-    return map[status] || 'ERROR';
   }
 
   static badRequest(message: string, details?: Record<string, unknown>) {
@@ -93,10 +86,10 @@ export class AppError extends Error {
   }
 }
 
-/**
- * Global error handler middleware — must be registered LAST.
- * Returns RFC 7807 Problem Details responses.
- */
+function buildProblemTypeUri(code: string): string {
+  return `${ERROR_TYPE_BASE}/${code.toLowerCase().replace(/_/g, '-')}`;
+}
+
 export const errorHandler = (
   err: Error | AppError | any,
   req: Request,
@@ -106,10 +99,9 @@ export const errorHandler = (
   const traceId = req.requestId || 'unknown';
   const path = `${req.method} ${req.originalUrl}`;
 
-  // AppError (our custom error class)
   if (err instanceof AppError) {
     const problem: ProblemDetails = {
-      type: `https://paytrack.dev/errors/${err.code.toLowerCase().replace(/_/g, '-')}`,
+      type: buildProblemTypeUri(err.code),
       title: err.message,
       status: err.statusCode,
       code: err.code,
@@ -132,10 +124,9 @@ export const errorHandler = (
     return res.status(err.statusCode).type('application/problem+json').json(problem);
   }
 
-  // Joi / validation errors with 422 statusCode attached
   if (err.statusCode === 422 && err.details) {
     const problem: ProblemDetails = {
-      type: 'https://paytrack.dev/errors/validation-error',
+      type: buildProblemTypeUri('VALIDATION_ERROR'),
       title: 'Validation failed',
       status: 422,
       code: 'VALIDATION_ERROR',
@@ -146,9 +137,8 @@ export const errorHandler = (
     return res.status(422).type('application/problem+json').json(problem);
   }
 
-  // Unknown errors
   const problem: ProblemDetails = {
-    type: 'https://paytrack.dev/errors/internal',
+    type: buildProblemTypeUri('INTERNAL_ERROR'),
     title: 'Internal server error',
     status: 500,
     code: 'INTERNAL_ERROR',

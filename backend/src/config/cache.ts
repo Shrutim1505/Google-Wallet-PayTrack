@@ -1,12 +1,9 @@
-/**
- * Cache abstraction: Redis in production, in-memory for development.
- *
- * Provides a unified interface so services don't care whether they're
- * running in single-instance dev mode or horizontally scaled production.
- */
 import { Redis } from 'ioredis';
 import { environment } from './environment.js';
 import { logger } from '../utils/logger.js';
+
+const CLEANUP_INTERVAL_MS = 60_000;
+const REDIS_MAX_RETRIES = 3;
 
 export interface Cache {
   get(key: string): Promise<string | null>;
@@ -23,13 +20,7 @@ class InMemoryCache implements Cache {
   private store = new Map<string, { value: string; expiresAt: number | null }>();
 
   constructor() {
-    // Periodic cleanup to prevent memory bloat
-    setInterval(() => {
-      const now = Date.now();
-      for (const [k, v] of this.store.entries()) {
-        if (v.expiresAt && v.expiresAt < now) this.store.delete(k);
-      }
-    }, 60_000).unref();
+    setInterval(() => this.purgeExpired(), CLEANUP_INTERVAL_MS).unref();
   }
 
   async get(key: string): Promise<string | null> {
@@ -76,10 +67,19 @@ class InMemoryCache implements Cache {
   async quit(): Promise<void> {
     this.store.clear();
   }
+
+  private purgeExpired(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.store.entries()) {
+      if (entry.expiresAt && entry.expiresAt < now) {
+        this.store.delete(key);
+      }
+    }
+  }
 }
 
 class RedisCache implements Cache {
-  constructor(private client: Redis) {}
+  constructor(private readonly client: Redis) {}
 
   async get(key: string): Promise<string | null> {
     return this.client.get(key);
@@ -118,30 +118,34 @@ class RedisCache implements Cache {
   }
 }
 
-let cache: Cache;
+let cache: Cache | undefined;
 let redisClient: Redis | null = null;
 
 export function initializeCache(): Cache {
   if (environment.REDIS_URL) {
     redisClient = new Redis(environment.REDIS_URL, {
-      maxRetriesPerRequest: 3,
+      maxRetriesPerRequest: REDIS_MAX_RETRIES,
       lazyConnect: false,
     });
-    redisClient.on('error', (err) => logger.error({ msg: 'Redis error', err: err.message }));
+    redisClient.on('error', err => logger.error({ msg: 'Redis error', err: err.message }));
     redisClient.on('connect', () => logger.info('Redis connected'));
     cache = new RedisCache(redisClient);
-  } else {
-    if (environment.NODE_ENV === 'production') {
-      throw new Error('REDIS_URL required in production');
-    }
-    logger.warn('Using in-memory cache (set REDIS_URL for production-grade caching)');
-    cache = new InMemoryCache();
+    return cache;
   }
+
+  if (environment.NODE_ENV === 'production') {
+    throw new Error('REDIS_URL is required in production');
+  }
+
+  logger.warn('Using in-memory cache (set REDIS_URL for distributed caching)');
+  cache = new InMemoryCache();
   return cache;
 }
 
 export function getCache(): Cache {
-  if (!cache) throw new Error('Cache not initialized — call initializeCache() first');
+  if (!cache) {
+    throw new Error('Cache not initialized; call initializeCache() first');
+  }
   return cache;
 }
 

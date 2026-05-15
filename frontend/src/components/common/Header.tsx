@@ -73,7 +73,7 @@ export function Header({ onSettingsClick }: HeaderProps) {
               <span className="text-xs text-gray-500 font-medium">Smart Receipt Tracking</span>
             </div>
           </div>
-          
+
           <div className="flex items-center space-x-4">
             <div className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium" title={connected ? 'Real-time connected' : 'Connecting...'}>
               {connected ? (
@@ -90,13 +90,13 @@ export function Header({ onSettingsClick }: HeaderProps) {
                 </span>
               )}
             </button>
-            <button 
+            <button
               onClick={onSettingsClick}
               className="p-2 hover:bg-blue-50 rounded-xl transition-all duration-200 group"
             >
               <Settings className="w-5 h-5 text-gray-600 group-hover:text-blue-600" />
             </button>
-            <button 
+            <button
               onClick={logout}
               className="p-2 hover:bg-red-50 rounded-xl transition-all duration-200 group"
               title="Sign Out"

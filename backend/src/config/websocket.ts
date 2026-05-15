@@ -17,13 +17,8 @@ export type RTEvent =
 
 let io: Server | null = null;
 
-// Map userId → Set of socket IDs
 const userSockets = new Map<string, Set<string>>();
 
-/**
- * Initialize Socket.IO on the existing HTTP server.
- * Authenticates connections via JWT sent in the handshake auth payload.
- */
 export function initializeWebSocket(httpServer: HttpServer): Server {
   io = new Server(httpServer, {
     cors: {
@@ -34,7 +29,6 @@ export function initializeWebSocket(httpServer: HttpServer): Server {
     pingTimeout: 20000,
   });
 
-  // ── Auth middleware ──
   io.use((socket, next) => {
     const token = socket.handshake.auth?.token;
     if (!token) return next(new Error('Authentication required'));
@@ -86,9 +80,6 @@ export function initializeWebSocket(httpServer: HttpServer): Server {
   return io;
 }
 
-/**
- * Emit a real-time event to a specific user (all their connected devices/tabs).
- */
 export function emitToUser(userId: string, event: RTEvent, data: unknown): void {
   if (!io) return;
   io.to(`user:${userId}`).emit(event, {
@@ -97,24 +88,15 @@ export function emitToUser(userId: string, event: RTEvent, data: unknown): void 
   });
 }
 
-/**
- * Emit to all connected clients (e.g. system-wide announcements).
- */
 export function emitToAll(event: string, data: unknown): void {
   if (!io) return;
   io.emit(event, data);
 }
 
-/**
- * Get count of connected sockets for a user.
- */
 export function getUserConnectionCount(userId: string): number {
   return userSockets.get(userId)?.size || 0;
 }
 
-/**
- * Get total connected clients.
- */
 export function getTotalConnections(): number {
   let total = 0;
   for (const sockets of userSockets.values()) total += sockets.size;

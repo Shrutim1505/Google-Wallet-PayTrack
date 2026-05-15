@@ -35,11 +35,6 @@ export interface WalletSyncStatus {
 /** In-memory sync tracking (replace with DB in production) */
 const syncStore = new Map<string, { lastSyncAt: string; count: number }>();
 
-/**
- * Google Wallet integration service.
- * Uses real Google Wallet APIs when GOOGLE_WALLET_ISSUER_ID is configured,
- * otherwise provides a structured mock implementation.
- */
 export class WalletService {
   private isConfigured: boolean;
 

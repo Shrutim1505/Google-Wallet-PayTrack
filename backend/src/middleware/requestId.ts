@@ -9,12 +9,10 @@ declare global {
   }
 }
 
-/**
- * Attaches a unique request ID to every incoming request.
- * Useful for log correlation and distributed tracing.
- */
+const REQUEST_ID_HEADER = 'x-request-id';
+
 export function requestIdMiddleware(req: Request, res: Response, next: NextFunction) {
-  const id = (req.headers['x-request-id'] as string) || randomUUID();
+  const id = (req.headers[REQUEST_ID_HEADER] as string) || randomUUID();
   req.requestId = id;
   res.setHeader('X-Request-Id', id);
   next();

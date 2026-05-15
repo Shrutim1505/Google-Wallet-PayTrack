@@ -5,30 +5,24 @@ import { environment } from '../config/environment.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 
-/**
- * Secure password reset flow:
- * 1. User requests reset → generate random token, store hash, email the plain token
- * 2. User submits new password with token → verify token hash, update password, mark token used
- *
- * Tokens are single-use and expire after PASSWORD_RESET_TTL_MINUTES (default 30min).
- */
+const TOKEN_BYTES = 32;
+const BCRYPT_ROUNDS = 12;
+
 export class PasswordResetService {
-  /**
-   * Request a password reset. Always returns successfully (no user enumeration).
-   * The plain token is returned so a background job / email service can send it.
-   */
   async requestReset(email: string): Promise<{ token: string | null }> {
     const pool = getPool();
-    const { rows } = await pool.query('SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL', [email]);
+    const { rows } = await pool.query(
+      'SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL',
+      [email]
+    );
 
-    // Deliberately don't throw if user doesn't exist — prevents account enumeration
     if (rows.length === 0) {
       logger.info({ msg: 'Password reset requested for unknown email', email });
       return { token: null };
     }
 
     const userId = rows[0].id;
-    const token = randomBytes(32).toString('hex');
+    const token = randomBytes(TOKEN_BYTES).toString('hex');
     const tokenHash = this.hashToken(token);
     const expiresAt = new Date(Date.now() + environment.PASSWORD_RESET_TTL_MINUTES * 60 * 1000);
 
@@ -45,17 +39,18 @@ export class PasswordResetService {
     const pool = getPool();
     const tokenHash = this.hashToken(token);
 
-    const { rows } = await pool.query(`
-      SELECT user_id, expires_at, used_at FROM password_resets WHERE token_hash = $1
-    `, [tokenHash]);
+    const { rows } = await pool.query(
+      'SELECT user_id, expires_at, used_at FROM password_resets WHERE token_hash = $1',
+      [tokenHash]
+    );
 
     if (rows.length === 0) throw AppError.badRequest('Invalid or expired reset token');
-    const reset = rows[0];
 
+    const reset = rows[0];
     if (reset.used_at) throw AppError.badRequest('Reset token already used');
     if (new Date(reset.expires_at) < new Date()) throw AppError.badRequest('Reset token expired');
 
-    const newHash = await bcrypt.hash(newPassword, 12);
+    const newHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
 
     await pool.query('BEGIN');
     try {
@@ -76,11 +71,10 @@ export class PasswordResetService {
     logger.info({ msg: 'Password reset completed', userId: reset.user_id });
   }
 
-  /**
-   * Cleanup expired tokens — call periodically from a cron job.
-   */
   async cleanupExpired(): Promise<number> {
-    const { rowCount } = await getPool().query('DELETE FROM password_resets WHERE expires_at < NOW()');
+    const { rowCount } = await getPool().query(
+      'DELETE FROM password_resets WHERE expires_at < NOW()'
+    );
     return rowCount || 0;
   }
 

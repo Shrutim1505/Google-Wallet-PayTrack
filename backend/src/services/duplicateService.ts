@@ -11,11 +11,6 @@ interface DuplicateCandidate {
   reason: string;
 }
 
-/**
- * Duplicate detection using multi-signal similarity scoring.
- * Combines merchant name similarity (Jaro-Winkler), amount proximity,
- * date proximity, and optional image hash comparison.
- */
 export class DuplicateService {
   /** Check if a new receipt is a potential duplicate */
   async checkDuplicate(userId: string, merchant: string, amount: number, date: string, imageBuffer?: Buffer): Promise<DuplicateCandidate[]> {
