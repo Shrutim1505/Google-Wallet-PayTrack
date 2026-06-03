@@ -6,7 +6,7 @@
 # ---------- Test runner ----------
 pytest==8.3.4
 pytest-xdist==3.6.1                # Parallel execution: -n auto
-pytest-rerunfailures==14.0         # Flaky-test retry: --reruns N
+pytest-rerunfailures==16.3         # Flaky-test retry: --reruns N
 pytest-html==4.1.1                 # Self-contained HTML report
 pytest-metadata==3.1.1             # Required by pytest-html
 pytest-env==1.1.5                  # Load .env into pytest
