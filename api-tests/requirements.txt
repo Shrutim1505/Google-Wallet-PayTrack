@@ -1,0 +1,48 @@
+# =============================================================================
+# Google-Wallet-PayTrack | API Automation Framework
+# Pinned dependencies — keep in sync with `requirements-dev.txt` if added later.
+# =============================================================================
+
+# ---------- Test runner ----------
+pytest==8.3.4
+pytest-xdist==3.6.1                # Parallel execution: -n auto
+pytest-rerunfailures==14.0         # Flaky-test retry: --reruns N
+pytest-html==4.1.1                 # Self-contained HTML report
+pytest-metadata==3.1.1             # Required by pytest-html
+pytest-env==1.1.5                  # Load .env into pytest
+pytest-dotenv==0.5.2
+pytest-timeout==2.3.1              # Hard test timeouts
+pytest-ordering==0.6               # Order-aware tests when needed
+
+# ---------- Allure ----------
+allure-pytest==2.13.5
+allure-python-commons==2.13.5
+
+# ---------- HTTP / API ----------
+requests==2.32.3
+requests-toolbelt==1.0.0           # MultipartEncoder for upload tests
+urllib3==2.2.3
+
+# ---------- Schema / data validation ----------
+jsonschema==4.23.0
+pydantic==2.9.2
+pydantic-settings==2.6.1
+
+# ---------- JWT / Security ----------
+PyJWT==2.9.0
+cryptography==43.0.3
+
+# ---------- Database (PostgreSQL) ----------
+psycopg2-binary==2.9.10
+SQLAlchemy==2.0.36
+
+# ---------- Test data ----------
+Faker==30.8.2
+
+# ---------- Utilities ----------
+PyYAML==6.0.2
+python-dotenv==1.0.1
+tenacity==9.0.0                    # Robust retries with backoff
+rich==13.9.4                       # Pretty console logging
+structlog==24.4.0
+typing-extensions==4.12.2

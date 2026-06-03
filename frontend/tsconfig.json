@@ -19,7 +19,10 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    
+
+    /* Test types — describe/it/expect/vi globals + jest-dom matchers */
+    "types": ["vitest/globals", "@testing-library/jest-dom"],
+
     /* Paths */
     "baseUrl": ".",
     "paths": {

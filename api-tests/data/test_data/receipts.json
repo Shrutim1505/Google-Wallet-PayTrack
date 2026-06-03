@@ -1,0 +1,49 @@
+{
+  "valid_receipts": [
+    {
+      "merchant": "Starbucks Coffee",
+      "amount": 5.75,
+      "date": "2026-05-15",
+      "category": "Food",
+      "currency": "USD",
+      "items": [
+        {"name": "Latte", "quantity": 1, "price": 4.5},
+        {"name": "Croissant", "quantity": 1, "price": 1.25}
+      ],
+      "notes": "Morning coffee run",
+      "tags": ["coffee", "morning"],
+      "isManualEntry": true
+    },
+    {
+      "merchant": "Uber India",
+      "amount": 245.0,
+      "date": "2026-05-20",
+      "category": "Transport",
+      "currency": "INR",
+      "items": [],
+      "notes": "Airport drop",
+      "tags": ["travel"],
+      "isManualEntry": true
+    },
+    {
+      "merchant": "Amazon Pantry",
+      "amount": 1899.5,
+      "date": "2026-05-22",
+      "category": "Shopping",
+      "currency": "INR",
+      "items": [
+        {"name": "Detergent", "quantity": 2, "price": 250},
+        {"name": "Rice 5kg", "quantity": 1, "price": 850}
+      ],
+      "notes": "Monthly groceries",
+      "tags": ["groceries"],
+      "isManualEntry": true
+    }
+  ],
+  "invalid_receipts": [
+    {"_label": "missing merchant", "amount": 10, "date": "2026-05-01", "category": "Food"},
+    {"_label": "negative amount", "merchant": "X", "amount": -5, "date": "2026-05-01", "category": "Food"},
+    {"_label": "bad category", "merchant": "X", "amount": 10, "date": "2026-05-01", "category": "BadCat"},
+    {"_label": "bad date", "merchant": "X", "amount": 10, "date": "31/12/2026", "category": "Food"}
+  ]
+}

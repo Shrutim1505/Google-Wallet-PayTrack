@@ -1,0 +1,14 @@
+{
+  "valid_users": [
+    {"email": "qa.user1@paytrack-test.dev", "password": "QaUser1!Secure", "name": "QA User One"},
+    {"email": "qa.user2@paytrack-test.dev", "password": "QaUser2!Secure", "name": "QA User Two"}
+  ],
+  "invalid_emails": [
+    "",
+    "not-an-email",
+    "missing@dotcom",
+    "@no-local-part.com",
+    "spaces in@email.com"
+  ],
+  "weak_passwords": ["", "1", "abc", "1234567"]
+}

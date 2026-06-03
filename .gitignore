@@ -43,3 +43,15 @@ pnpm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# Generated test reports / coverage
+frontend/coverage/
+frontend/reports/
+**/__pycache__/
+**/.pytest_cache/
+**/.venv/
+**/venv/
+api-tests/reports/
+api-tests/logs/
+api-tests-bdd/reports/
+api-tests-bdd/logs/

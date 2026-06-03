@@ -1,0 +1,56 @@
+# =============================================================================
+#  Dependabot — automated dependency PRs
+#  https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+# =============================================================================
+
+version: 2
+updates:
+  # ---------- Backend ----------
+  - package-ecosystem: npm
+    directory: /backend
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+    labels: [dependencies, backend]
+    groups:
+      production:
+        dependency-type: production
+      dev:
+        dependency-type: development
+
+  # ---------- Frontend ----------
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+    labels: [dependencies, frontend]
+    groups:
+      production:
+        dependency-type: production
+      dev:
+        dependency-type: development
+
+  # ---------- API tests (Python) ----------
+  - package-ecosystem: pip
+    directory: /api-tests
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 3
+    labels: [dependencies, tests]
+
+  # ---------- BDD tests (Python) ----------
+  - package-ecosystem: pip
+    directory: /api-tests-bdd
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 3
+    labels: [dependencies, tests]
+
+  # ---------- GitHub Actions ----------
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    labels: [dependencies, ci]
+
+  # ---------- Docker ----------
+  - package-ecosystem: docker
+    directory: /backend
+    schedule: { interval: monthly }
+    labels: [dependencies, docker]
