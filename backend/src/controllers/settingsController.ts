@@ -2,7 +2,6 @@ import { Request, Response } from 'express';
 import { SettingsService } from '../services/settingsService.js';
 import { getPool } from '../config/database.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { logger } from '../utils/logger.js';
 import { HTTP_STATUS } from '../utils/constants.js';
 import { emitToUser } from '../config/websocket.js';
 

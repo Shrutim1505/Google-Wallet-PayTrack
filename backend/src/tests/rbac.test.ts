@@ -10,7 +10,7 @@ describe('RBAC System', () => {
   let viewerUserId: string;
 
   beforeAll(async () => {
-    const pool = getPool();
+    const _pool = getPool();
     const hash = await bcrypt.hash('test', 10);
 
     // Create test users with different roles
