@@ -114,7 +114,7 @@ jobs:
 
       - name: Upload frontend coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-frontend
           path: frontend/coverage
@@ -122,7 +122,7 @@ jobs:
 
       - name: Upload frontend JUnit
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: junit-frontend
           path: frontend/reports/junit
@@ -225,7 +225,7 @@ jobs:
 
       - name: Upload backend coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-backend
           path: backend/coverage
@@ -233,7 +233,7 @@ jobs:
 
       - name: Upload backend JUnit
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: junit-backend
           path: backend/reports/junit
@@ -340,28 +340,28 @@ jobs:
 
       - name: Upload Allure results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: allure-pytest-${{ matrix.suite }}
           path: api-tests/reports/allure-results
           retention-days: 14
       - name: Upload HTML report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: html-pytest-${{ matrix.suite }}
           path: api-tests/reports/html
           retention-days: 14
       - name: Upload JUnit
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: junit-pytest-${{ matrix.suite }}
           path: api-tests/reports/junit
           retention-days: 14
       - name: Upload backend log on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-log-pytest-${{ matrix.suite }}
           path: backend/server.log
@@ -447,14 +447,14 @@ jobs:
 
       - name: Upload Allure results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: allure-bdd
           path: api-tests-bdd/reports/allure-results
           retention-days: 14
       - name: Upload JUnit
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: junit-bdd
           path: api-tests-bdd/reports/junit
@@ -479,7 +479,7 @@ jobs:
       - name: Build
         run: npm run build
       - name: Upload dist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-dist
           path: frontend/dist
@@ -501,7 +501,7 @@ jobs:
       - name: Compile TypeScript
         run: npm run build
       - name: Upload dist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-dist
           path: backend/dist
@@ -623,7 +623,7 @@ jobs:
           done
           allure generate allure-merged -o allure-report --clean
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: allure-report
           path: allure-report
@@ -654,7 +654,7 @@ jobs:
           cache-to: type=gha,mode=max
           outputs: type=docker,dest=/tmp/paytrack-backend.tar
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: docker-image-backend
           path: /tmp/paytrack-backend.tar
