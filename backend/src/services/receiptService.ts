@@ -1,142 +1,174 @@
 import { v4 as uuidv4 } from 'uuid';
-import { getDatabase } from '../config/database.js';
+import { getPool } from '../config/database.js';
+import { AppError } from '../middleware/errorHandler.js';
+import { HTTP_STATUS } from '../utils/constants.js';
+
+export interface CreateReceiptDTO {
+  merchant: string;
+  amount: number;
+  date: string;
+  category?: string;
+  currency?: string;
+  items?: Array<{ name: string; quantity?: number; price?: number }>;
+  notes?: string;
+  imageUrl?: string;
+  tags?: string[];
+  isManualEntry?: boolean;
+}
+
+export interface ReceiptFilters {
+  category?: string;
+  startDate?: string;
+  endDate?: string;
+  minAmount?: number;
+  maxAmount?: number;
+  search?: string;
+}
 
 export class ReceiptService {
-  async createReceipt(userId: string, receiptData: any) {
-    const db = getDatabase();
+  async createReceipt(userId: string, data: CreateReceiptDTO) {
+    const pool = getPool();
     const id = uuidv4();
 
-    const merchant = (receiptData.merchant ?? receiptData.vendor ?? '').toString().trim() || 'Unknown Merchant';
-    const amount = Number(receiptData.amount ?? 0) || 0;
-    const date =
-      typeof receiptData.date === 'string'
-        ? receiptData.date
-        : new Date(receiptData.date ?? new Date()).toISOString().split('T')[0];
-
-    const category = (receiptData.category ?? 'Other').toString();
-    const items = Array.isArray(receiptData.items) ? receiptData.items : [];
-    const tags = Array.isArray(receiptData.tags) ? receiptData.tags : [];
-
-    await db.run(
-      `INSERT INTO receipts
-        (id, userId, merchant, amount, currency, date, category, items, imageUrl, notes, tags, isManualEntry)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    await pool.query(
+      `INSERT INTO receipts (id, user_id, merchant, amount, currency, date, category, items, image_url, notes, tags, is_manual_entry)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
       [
-        id,
-        userId,
-        merchant,
-        amount,
-        receiptData.currency || 'INR',
-        date,
-        category,
-        JSON.stringify(items),
-        receiptData.imageUrl || '',
-        receiptData.notes || '',
-        JSON.stringify(tags),
-        receiptData.isManualEntry ? 1 : 0,
+        id, userId, data.merchant, data.amount, data.currency || 'INR',
+        data.date, data.category || 'Other',
+        JSON.stringify(data.items || []), data.imageUrl || '',
+        data.notes || '', JSON.stringify(data.tags || []),
+        data.isManualEntry ?? false,
       ]
     );
 
-    const created = await db.get('SELECT * FROM receipts WHERE id = ? AND userId = ?', [id, userId]);
-    if (!created) throw new Error('Failed to create receipt');
-    return created;
+    return this.getReceiptById(userId, id);
   }
 
-  async getReceipts(userId: string, page = 1, limit = 20) {
-    const db = getDatabase();
+  async getReceipts(userId: string, page = 1, limit = 20, filters?: ReceiptFilters) {
+    const pool = getPool();
     const offset = (page - 1) * limit;
 
-    const receipts = await db.all(
-      `SELECT * FROM receipts
-       WHERE userId = ?
-       ORDER BY date DESC
-       LIMIT ? OFFSET ?`,
-      [userId, limit, offset]
-    );
+    const conditions = ['user_id = $1'];
+    const params: any[] = [userId];
+    let paramIdx = 2;
 
-    return receipts;
+    if (filters?.category) {
+      conditions.push(`category = $${paramIdx++}`);
+      params.push(filters.category);
+    }
+    if (filters?.startDate) {
+      conditions.push(`date >= $${paramIdx++}`);
+      params.push(filters.startDate);
+    }
+    if (filters?.endDate) {
+      conditions.push(`date <= $${paramIdx++}`);
+      params.push(filters.endDate);
+    }
+    if (filters?.minAmount != null) {
+      conditions.push(`amount >= $${paramIdx++}`);
+      params.push(filters.minAmount);
+    }
+    if (filters?.maxAmount != null) {
+      conditions.push(`amount <= $${paramIdx++}`);
+      params.push(filters.maxAmount);
+    }
+    if (filters?.search) {
+      conditions.push(`(merchant ILIKE $${paramIdx} OR notes ILIKE $${paramIdx})`);
+      params.push(`%${filters.search}%`);
+      paramIdx++;
+    }
+
+    const where = conditions.join(' AND ');
+
+    const [dataResult, countResult] = await Promise.all([
+      pool.query(
+        `SELECT * FROM receipts WHERE ${where} ORDER BY date DESC LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
+        [...params, limit, offset]
+      ),
+      pool.query(`SELECT COUNT(*)::int as total FROM receipts WHERE ${where}`, params),
+    ]);
+
+    return { receipts: dataResult.rows, total: countResult.rows[0]?.total || 0, page, limit };
   }
 
   async getReceiptById(userId: string, receiptId: string) {
-    const db = getDatabase();
-    const receipt = await db.get('SELECT * FROM receipts WHERE id = ? AND userId = ?', [receiptId, userId]);
-
-    if (!receipt) {
-      throw new Error('Receipt not found');
-    }
-
-    return receipt;
+    const pool = getPool();
+    const { rows } = await pool.query(
+      'SELECT * FROM receipts WHERE id = $1 AND user_id = $2',
+      [receiptId, userId]
+    );
+    if (rows.length === 0) throw new AppError(HTTP_STATUS.NOT_FOUND, 'Receipt not found');
+    return rows[0];
   }
 
-  async updateReceipt(userId: string, receiptId: string, updates: any) {
-    const db = getDatabase();
-
-    // First check if receipt exists and belongs to user
+  async updateReceipt(userId: string, receiptId: string, updates: Partial<CreateReceiptDTO>) {
     await this.getReceiptById(userId, receiptId);
+    const pool = getPool();
 
-    const allowedFields = ['merchant', 'amount', 'category', 'notes', 'date', 'items', 'imageUrl', 'tags', 'isManualEntry'];
+    const allowedFields: Record<string, string> = {
+      merchant: 'merchant', amount: 'amount', category: 'category',
+      notes: 'notes', date: 'date', imageUrl: 'image_url',
+    };
+
     const setClauses: string[] = [];
     const values: any[] = [];
+    let paramIdx = 1;
 
     for (const [key, value] of Object.entries(updates)) {
-      if (!allowedFields.includes(key)) continue;
-
-      if (key === 'items') {
-        setClauses.push('items = ?');
+      if (key === 'items' || key === 'tags') {
+        setClauses.push(`${key} = $${paramIdx++}`);
         values.push(JSON.stringify(Array.isArray(value) ? value : []));
-        continue;
+      } else if (key === 'isManualEntry') {
+        setClauses.push(`is_manual_entry = $${paramIdx++}`);
+        values.push(!!value);
+      } else if (allowedFields[key]) {
+        setClauses.push(`${allowedFields[key]} = $${paramIdx++}`);
+        values.push(value);
       }
-      if (key === 'tags') {
-        setClauses.push('tags = ?');
-        values.push(JSON.stringify(Array.isArray(value) ? value : []));
-        continue;
-      }
-      if (key === 'isManualEntry') {
-        setClauses.push('isManualEntry = ?');
-        values.push(value ? 1 : 0);
-        continue;
-      }
-      setClauses.push(`${key} = ?`);
-      values.push(value);
     }
 
-    if (setClauses.length === 0) return await this.getReceiptById(userId, receiptId);
+    if (setClauses.length === 0) return this.getReceiptById(userId, receiptId);
 
+    setClauses.push('updated_at = NOW()');
     values.push(receiptId, userId);
-    await db.run(`UPDATE receipts SET ${setClauses.join(', ')} WHERE id = ? AND userId = ?`, values);
 
-    return await this.getReceiptById(userId, receiptId);
+    await pool.query(
+      `UPDATE receipts SET ${setClauses.join(', ')} WHERE id = $${paramIdx} AND user_id = $${paramIdx + 1}`,
+      values
+    );
+
+    return this.getReceiptById(userId, receiptId);
   }
 
   async deleteReceipt(userId: string, receiptId: string) {
-    const db = getDatabase();
     await this.getReceiptById(userId, receiptId);
-    await db.run('DELETE FROM receipts WHERE id = ? AND userId = ?', [receiptId, userId]);
+    const pool = getPool();
+    await pool.query('DELETE FROM receipts WHERE id = $1 AND user_id = $2', [receiptId, userId]);
   }
 
   async getMonthlyStats(userId: string, year: number, month: number) {
-    const db = getDatabase();
+    const pool = getPool();
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
     const endDate = new Date(year, month, 0).toISOString().split('T')[0];
 
-    const rows = await db.all(
-      `SELECT
-        SUM(amount) as totalAmount,
-        category,
-        COUNT(*) as count
-       FROM receipts
-       WHERE userId = ? AND date BETWEEN ? AND ?
+    const { rows } = await pool.query(
+      `SELECT category, SUM(amount)::numeric as total_amount, COUNT(*)::int as count
+       FROM receipts WHERE user_id = $1 AND date BETWEEN $2 AND $3
        GROUP BY category`,
       [userId, startDate, endDate]
     );
 
-    return rows.reduce((acc: any, row: any) => {
-      const totalAmount = parseFloat(row.totalAmount || 0);
-      acc.totalAmount = (acc.totalAmount || 0) + totalAmount;
-      acc.categoryBreakdown = acc.categoryBreakdown || {};
-      acc.categoryBreakdown[row.category] = totalAmount;
-      acc.itemCount = (acc.itemCount || 0) + parseInt(row.count || '0');
-      return acc;
-    }, {});
+    return rows.reduce(
+      (acc: any, row: any) => {
+        const total = parseFloat(row.total_amount || 0);
+        acc.totalAmount = (acc.totalAmount || 0) + total;
+        acc.categoryBreakdown = acc.categoryBreakdown || {};
+        acc.categoryBreakdown[row.category] = total;
+        acc.itemCount = (acc.itemCount || 0) + row.count;
+        return acc;
+      },
+      {}
+    );
   }
 }

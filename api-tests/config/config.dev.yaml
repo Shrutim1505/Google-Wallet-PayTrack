@@ -1,0 +1,75 @@
+# -----------------------------------------------------------------------------
+#  Dev-environment configuration — values overridable via .env / shell env vars.
+#  Resolution order (highest → lowest): shell env > .env > YAML > defaults.
+# -----------------------------------------------------------------------------
+api:
+  base_url: http://localhost:5000
+  prefix: /api
+  timeout_seconds: 30
+  verify_ssl: false
+  retry:
+    total: 3
+    backoff_factor: 0.5
+    status_forcelist: [429, 500, 502, 503, 504]
+
+auth:
+  jwt_secret: change-me-to-at-least-32-random-characters-please
+  jwt_access_expiry_seconds: 900
+  jwt_refresh_expiry_seconds: 604800
+  default_role: user
+  roles:
+    admin:
+      permissions:
+        - receipts:create
+        - receipts:read
+        - receipts:read_all
+        - receipts:update
+        - receipts:delete
+        - budgets:create
+        - budgets:read
+        - budgets:update
+        - budgets:delete
+        - analytics:read
+        - settings:read
+        - settings:update
+        - users:manage
+        - roles:manage
+    user:
+      permissions:
+        - receipts:create
+        - receipts:read
+        - receipts:update
+        - receipts:delete
+        - budgets:create
+        - budgets:read
+        - budgets:update
+        - budgets:delete
+        - analytics:read
+        - settings:read
+        - settings:update
+    viewer:
+      permissions:
+        - receipts:read
+        - budgets:read
+        - analytics:read
+        - settings:read
+
+database:
+  host: localhost
+  port: 5432
+  name: paytrack_test
+  user: paytrack
+  password: paytrack
+  pool_size: 5
+
+reporting:
+  allure_results_dir: reports/allure-results
+  html_report_path: reports/html/report.html
+  log_level: INFO
+
+receipts:
+  categories: [Food, Transport, Shopping, Bills, Entertainment, Health, Other]
+  currencies: [INR, USD, EUR, GBP, CAD, AUD, JPY, CNY]
+  default_currency: INR
+  max_file_size_bytes: 10485760
+  allowed_file_types: [image/jpeg, image/png, application/pdf]

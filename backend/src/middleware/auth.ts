@@ -1,27 +1,55 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { environment } from '../config/environment.js';
+import { AppError } from './errorHandler.js';
+import { isTokenBlacklisted } from '../services/tokenBlacklist.js';
+import type { TokenPayload } from '../services/authService.js';
 
-export function authMiddleware(req: Request, res: Response, next: NextFunction) {
-  try {
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        success: false,
-        error: 'No token provided',
-      });
+declare global {
+  namespace Express {
+    interface Request {
+      userId?: string;
+      email?: string;
+      roles?: string[];
+      permissions?: string[];
     }
-
-    const token = authHeader.slice(7);
-    const decoded = jwt.verify(token, environment.JWT_SECRET);
-
-    (req as any).userId = (decoded as any).userId;
-    next();
-  } catch {
-    res.status(401).json({
-      success: false,
-      error: 'Invalid token',
-    });
   }
+}
+
+const BEARER_PREFIX = 'Bearer ';
+
+export async function authMiddleware(req: Request, _res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader?.startsWith(BEARER_PREFIX)) {
+    return next(AppError.unauthorized('No token provided'));
+  }
+
+  const token = authHeader.slice(BEARER_PREFIX.length);
+
+  if (await isTokenBlacklisted(token)) {
+    return next(AppError.unauthorized('Token has been revoked'));
+  }
+
+  let decoded: TokenPayload;
+  try {
+    decoded = jwt.verify(token, environment.JWT_SECRET) as TokenPayload;
+  } catch {
+    return next(AppError.unauthorized('Invalid or expired token'));
+  }
+
+  if (decoded.type && decoded.type !== 'access') {
+    return next(AppError.unauthorized('Invalid token type'));
+  }
+
+  req.userId = decoded.sub;
+  req.email = decoded.email;
+  req.roles = decoded.roles || [];
+  req.permissions = decoded.permissions || [];
+  next();
+}
+
+export function requireAuth(req: Request, _res: Response, next: NextFunction) {
+  if (!req.userId) return next(AppError.unauthorized());
+  next();
 }

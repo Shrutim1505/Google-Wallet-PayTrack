@@ -1,0 +1,30 @@
+# =============================================================================
+#  CODEOWNERS — automatic review assignment
+#  Syntax: <path-pattern>  <github-handle-or-team>
+#  https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-customizations/about-code-owners
+# =============================================================================
+
+# Default owner for everything
+*                                @shrutivm
+
+# Backend
+/backend/                        @shrutivm
+/backend/src/services/auth*      @shrutivm
+/backend/src/middleware/         @shrutivm
+/backend/migrations/             @shrutivm
+
+# Frontend
+/frontend/                       @shrutivm
+
+# Test frameworks
+/api-tests/                      @shrutivm
+/api-tests-bdd/                  @shrutivm
+
+# CI / DevOps — must be reviewed
+/.github/                        @shrutivm
+/Dockerfile*                     @shrutivm
+/docker-compose*.yml             @shrutivm
+
+# Security-sensitive
+/.env*                           @shrutivm
+/CODEOWNERS                      @shrutivm
