@@ -92,7 +92,7 @@ export const uploadReceipt = asyncHandler(async (req: Request, res: Response) =>
 
   if (!file) throw new AppError(HTTP_STATUS.BAD_REQUEST, 'File upload is required');
 
-  const extracted = await ocrService.extractReceiptData(file.path);
+  const extracted = await ocrService.extractReceiptData(file.path, file.mimetype);
   const merchant = extracted.vendor;
   const finalCategory = req.body.category || categorizationService.categorizeReceipt(merchant);
 

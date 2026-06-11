@@ -1,4 +1,5 @@
 import { ImageAnnotatorClient } from '@google-cloud/vision';
+import Tesseract from 'tesseract.js';
 import fs from 'node:fs';
 import { environment } from '../config/environment.js';
 import { logger } from '../utils/logger.js';
@@ -48,17 +49,22 @@ export class OCRService {
       logger.info({ message: 'OCR: Google Cloud Vision API initialized' });
     } else {
       this.visionClient = null;
-      logger.info({ message: 'OCR: Vision API not configured, using local parser' });
+      logger.info({ message: 'OCR: Vision API not configured, using Tesseract.js' });
     }
   }
 
-  async extractReceiptData(imagePath: string): Promise<ReceiptData> {
+  async extractReceiptData(imagePath: string, mimetype?: string): Promise<ReceiptData> {
+    if (mimetype === 'application/pdf') {
+      logger.warn({ message: 'PDF upload not supported without Google Vision API' });
+      return { vendor: 'Unknown', date: new Date(), amount: 0, rawText: '', confidence: 0, items: [] };
+    }
     const rawText = await this.extractText(imagePath);
     return this.parseReceiptText(rawText);
   }
 
   private async extractText(imagePath: string): Promise<string> {
-    return this.visionClient ? this.extractWithVision(imagePath) : this.extractLocal();
+    if (this.visionClient) return this.extractWithVision(imagePath);
+    return this.extractWithTesseract(imagePath);
   }
 
   private async extractWithVision(imagePath: string): Promise<string> {
@@ -79,34 +85,35 @@ export class OCRService {
       });
 
       if (!text) {
-        logger.warn({ message: 'Vision API returned empty text, using local fallback' });
-        return this.extractLocal();
+        logger.warn({ message: 'Vision API returned empty text, using Tesseract fallback' });
+        return this.extractWithTesseract(imagePath);
       }
 
       return text;
     } catch (error) {
       logger.error({ message: 'Vision API failed', error: (error as Error).message });
-      return this.extractLocal();
+      return this.extractWithTesseract(imagePath);
     }
   }
 
-  private extractLocal(): string {
-    const merchants = ['ABC SUPERMARKET', 'METRO GROCERY', 'FRESH MART', 'DAILY NEEDS STORE'];
-    const merchant = merchants[Math.floor(Math.random() * merchants.length)];
-    const date = new Date().toISOString().split('T')[0];
-    const items = [
-      { name: 'Groceries', price: 350 + Math.floor(Math.random() * 200) },
-      { name: 'Vegetables', price: 100 + Math.floor(Math.random() * 200) },
-      { name: 'Dairy Products', price: 80 + Math.floor(Math.random() * 120) },
-    ];
-    const total = items.reduce((s, i) => s + i.price, 0);
-
-    return [
-      `  ${merchant}`,
-      `  Date: ${date}`,
-      ...items.map(i => `  - ${i.name} ₹${i.price}`),
-      `  Total: ₹${total}`,
-    ].join('\n');
+  private async extractWithTesseract(imagePath: string): Promise<string> {
+    try {
+      // Tesseract.js only supports images, not PDFs
+      if (imagePath.toLowerCase().endsWith('.pdf')) {
+        logger.warn({ message: 'Tesseract does not support PDF files' });
+        return '';
+      }
+      const { data } = await Tesseract.recognize(imagePath, 'eng');
+      logger.info({
+        message: 'Tesseract OCR complete',
+        chars: data.text.length,
+        confidence: Math.round(data.confidence),
+      });
+      return data.text;
+    } catch (error) {
+      logger.error({ message: 'Tesseract OCR failed', error: (error as Error).message });
+      return '';
+    }
   }
 
   private parseReceiptText(text: string): ReceiptData {
