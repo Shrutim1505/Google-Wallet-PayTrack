@@ -1,0 +1,146 @@
+name: API Tests
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "api-tests/**"
+      - "backend/**"
+      - ".github/workflows/api-tests.yml"
+  pull_request:
+    paths:
+      - "api-tests/**"
+      - "backend/**"
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: api-tests
+
+jobs:
+  api-tests:
+    name: pytest (${{ matrix.suite }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [smoke, regression]
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: paytrack
+          POSTGRES_PASSWORD: paytrack
+          POSTGRES_DB: paytrack_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U paytrack"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---------- Backend bootstrap ----------
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend deps
+        working-directory: backend
+        run: npm ci
+
+      - name: Run DB migrations
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://paytrack:paytrack@localhost:5432/paytrack_test
+        run: |
+          echo "DATABASE_URL=$DATABASE_URL" > .env.local
+          npx node-pg-migrate --migrations-dir migrations --envPath .env.local up
+
+      - name: Start backend in background
+        working-directory: backend
+        env:
+          NODE_ENV: development
+          PORT: 5000
+          JWT_SECRET: ci-test-secret-at-least-32-characters-long-please
+          DATABASE_URL: postgresql://paytrack:paytrack@localhost:5432/paytrack_test
+          REDIS_URL: redis://localhost:6379
+          ALLOWED_ORIGINS: http://localhost:5173
+        run: |
+          npm run build
+          nohup node dist/index.js > server.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:5000/health/live && break
+            sleep 1
+          done
+
+      # ---------- Python framework ----------
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: api-tests/requirements.txt
+
+      - name: Install framework deps
+        run: pip install -r requirements.txt
+
+      - name: Configure environment
+        run: |
+          cp .env.example .env
+          sed -i 's|^JWT_SECRET=.*|JWT_SECRET=ci-test-secret-at-least-32-characters-long-please|' .env
+          sed -i 's|^DB_NAME=.*|DB_NAME=paytrack_test|' .env
+
+      - name: Run ${{ matrix.suite }}
+        env:
+          TEST_ENV: dev
+        run: |
+          if [ "${{ matrix.suite }}" = "smoke" ]; then
+            pytest -m smoke -v --reruns=1
+          else
+            pytest -n auto --dist=loadfile --reruns=1
+          fi
+
+      - name: Generate Allure report
+        if: always()
+        run: |
+          curl -sLO https://github.com/allure-framework/allure2/releases/download/2.30.0/allure-2.30.0.tgz
+          tar -xzf allure-2.30.0.tgz
+          ./allure-2.30.0/bin/allure generate reports/allure-results -o reports/allure-report --clean
+
+      - name: Upload Allure report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report-${{ matrix.suite }}
+          path: api-tests/reports/allure-report
+          retention-days: 14
+
+      - name: Upload HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-report-${{ matrix.suite }}
+          path: api-tests/reports/html
+          retention-days: 14
+
+      - name: Upload backend log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-log-${{ matrix.suite }}
+          path: backend/server.log
+          retention-days: 7

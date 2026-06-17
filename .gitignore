@@ -1,3 +1,33 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+dist-ssr
+
+# Environment files
+*.local
+.env
+
+# Secrets / credentials (NEVER commit)
+backend/gcp-key.json
+*gcp*key*.json
+*service-account*.json
+*credentials*.json
+
+# Database
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Uploads (keep directory, ignore contents)
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Stale data files
+backend/data/*.json
+
 # Logs
 logs
 *.log
@@ -5,21 +35,29 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
+# Editor
 .vscode/*
 !.vscode/extensions.json
 .idea
-.DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated test reports / coverage
+frontend/coverage/
+frontend/reports/
+**/__pycache__/
+**/.pytest_cache/
+**/.venv/
+**/venv/
+api-tests/reports/
+api-tests/logs/
+api-tests-bdd/reports/
+api-tests-bdd/logs/

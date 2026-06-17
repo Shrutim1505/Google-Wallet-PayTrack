@@ -1,0 +1,29 @@
+# Reports & logs (regenerated)
+reports/allure-results/
+reports/allure-report/
+reports/html/
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.pytest_cache/
+.cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# Virtualenvs
+venv/
+.venv/
+env/
+.env
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store

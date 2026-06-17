@@ -1,4 +1,4 @@
-import { ExpenseCategory } from './common';
+import { ExpenseCategory } from './common.js';
 
 export interface Receipt {
   id: string;

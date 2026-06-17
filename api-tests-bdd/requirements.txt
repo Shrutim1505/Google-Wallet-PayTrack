@@ -1,0 +1,22 @@
+# =============================================================================
+#  Behave BDD framework — Google-Wallet-PayTrack
+#  Reuses the api-tests framework for HTTP/JWT/DB/data utilities.
+# =============================================================================
+
+# ---------- BDD runner ----------
+behave==1.2.6
+allure-behave==2.13.5
+
+# ---------- Reused by the api-tests framework that we import ----------
+requests==2.32.3
+requests-toolbelt==1.0.0
+urllib3==2.2.3
+jsonschema==4.23.0
+pydantic==2.9.2
+PyJWT==2.9.0
+psycopg2-binary==2.9.10
+Faker==30.8.2
+PyYAML==6.0.2
+python-dotenv==1.0.1
+tenacity==9.0.0
+rich==13.9.4

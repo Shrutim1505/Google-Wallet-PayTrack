@@ -1,29 +1,139 @@
-import { getDatabase } from '../config/database.js';
+import { getPool } from '../config/database.js';
+import { topK, topKGroupedBy } from '../algorithms/MinHeap.js';
 
 export class AnalyticsService {
-  async getAnalytics(userId: string) {
-    const db = getDatabase();
+  async getAnalytics(userId: string, year: number = new Date().getFullYear(), month: number = new Date().getMonth() + 1) {
+    const pool = getPool();
 
-    const receipts = await db.all(
-      `SELECT category, amount FROM receipts WHERE userId = ?`,
+    // All time statistics
+    const { rows: allTimeRows } = await pool.query(
+      `SELECT category, SUM(amount)::numeric as total, COUNT(*)::int as count
+       FROM receipts WHERE user_id = $1 GROUP BY category`,
       [userId]
     );
 
-    const totalSpent = receipts.reduce((sum: number, r: any) => sum + Number(r.amount || 0), 0);
-    const receiptsCount = receipts.length;
+    const totalSpent = allTimeRows.reduce((sum, r) => sum + parseFloat(r.total), 0);
+    const receiptsCount = allTimeRows.reduce((sum, r) => sum + r.count, 0);
+    const categories = allTimeRows.map(r => ({ category: r.category, amount: parseFloat(r.total) }));
 
-    const byCategoryMap = new Map<string, number>();
-    for (const r of receipts) {
-      const cat = String(r.category || 'Uncategorized');
-      byCategoryMap.set(cat, (byCategoryMap.get(cat) || 0) + Number(r.amount || 0));
-    }
+    // Monthly statistics
+    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+    const endDate = new Date(year, month, 0).toISOString().split('T')[0];
 
-    const categories = Array.from(byCategoryMap.entries()).map(([category, amount]) => ({
-      category,
-      amount,
+    const { rows: monthlyRows } = await pool.query(
+      `SELECT category, SUM(amount)::numeric as total, COUNT(*)::int as count
+       FROM receipts WHERE user_id = $1 AND date BETWEEN $2 AND $3
+       GROUP BY category`,
+      [userId, startDate, endDate]
+    );
+
+    const monthlySpent = monthlyRows.reduce((sum, r) => sum + parseFloat(r.total), 0);
+    const monthlyCount = monthlyRows.reduce((sum, r) => sum + r.count, 0);
+    const monthlyCategories = monthlyRows.map(r => ({ category: r.category, amount: parseFloat(r.total) }));
+
+    return {
+      allTime: { totalSpent, receiptsCount, categories },
+      monthly: { year, month, totalSpent: monthlySpent, receiptsCount: monthlyCount, categories: monthlyCategories },
+    };
+  }
+
+  /**
+   * Top-K merchants by spending — uses min-heap algorithm.
+   *
+   * For N receipts and K results:
+   *   • Naive (sort all, take first K): O(N log N) time, O(N) space
+   *   • Top-K with min-heap:             O(N log K) time, O(K) space
+   *
+   * For K=10 and N=10000, this is ~4× faster.
+   */
+  async getTopMerchants(userId: string, k = 10): Promise<Array<{ merchant: string; total: number; count: number }>> {
+    const { rows } = await getPool().query(
+      `SELECT merchant, amount FROM receipts WHERE user_id = $1 AND deleted_at IS NULL`,
+      [userId]
+    );
+
+    const merchants = topKGroupedBy(
+      rows,
+      k,
+      (r) => r.merchant,
+      (r) => parseFloat(r.amount)
+    );
+
+    return merchants.map(m => ({
+      merchant: m.key,
+      total: m.total,
+      count: m.count,
     }));
+  }
 
-    return { totalSpent, receiptsCount, categories };
+  /**
+   * Top-K spending categories using the same Top-K algorithm.
+   */
+  async getTopCategories(userId: string, k = 5): Promise<Array<{ category: string; total: number; count: number }>> {
+    const { rows } = await getPool().query(
+      `SELECT category, amount FROM receipts WHERE user_id = $1 AND deleted_at IS NULL`,
+      [userId]
+    );
+
+    const categories = topKGroupedBy(
+      rows,
+      k,
+      (r) => r.category || 'Uncategorized',
+      (r) => parseFloat(r.amount)
+    );
+
+    return categories.map(c => ({ category: c.key, total: c.total, count: c.count }));
+  }
+
+  /**
+   * Top-K most expensive single receipts using Top-K directly (no grouping).
+   */
+  async getTopReceipts(userId: string, k = 10): Promise<Array<{ id: string; merchant: string; amount: number; date: string }>> {
+    const { rows } = await getPool().query(
+      `SELECT id, merchant, amount, date FROM receipts WHERE user_id = $1 AND deleted_at IS NULL`,
+      [userId]
+    );
+
+    const top = topK(rows, k, (r) => parseFloat(r.amount));
+    return top.map(r => ({
+      id: r.id,
+      merchant: r.merchant,
+      amount: parseFloat(r.amount),
+      date: r.date instanceof Date ? r.date.toISOString().split('T')[0] : String(r.date),
+    }));
+  }
+
+  /** Monthly spending trend over the last N months */
+  async getMonthlyTrend(userId: string, months = 6): Promise<Array<{ month: string; total: number; count: number }>> {
+    const { rows } = await getPool().query(
+      `SELECT to_char(date_trunc('month', date), 'YYYY-MM') as month,
+              SUM(amount)::numeric as total, COUNT(*)::int as count
+       FROM receipts WHERE user_id = $1 AND deleted_at IS NULL
+         AND date >= date_trunc('month', NOW()) - INTERVAL '${months} months'
+       GROUP BY 1 ORDER BY 1`,
+      [userId]
+    );
+    return rows.map(r => ({ month: r.month, total: Math.round(parseFloat(r.total)), count: r.count }));
+  }
+
+  /** AI confidence distribution buckets from receipt metadata */
+  async getConfidenceDistribution(userId: string): Promise<Array<{ bucket: string; count: number }>> {
+    const { rows } = await getPool().query(
+      `SELECT category_confidence as conf FROM receipt_ai_metadata m
+       JOIN receipts r ON r.id = m.receipt_id
+       WHERE r.user_id = $1 AND m.category_confidence IS NOT NULL`,
+      [userId]
+    );
+
+    const buckets = { '0-20%': 0, '20-40%': 0, '40-60%': 0, '60-80%': 0, '80-100%': 0 };
+    for (const row of rows) {
+      const c = parseFloat(row.conf) * 100;
+      if (c < 20) buckets['0-20%']++;
+      else if (c < 40) buckets['20-40%']++;
+      else if (c < 60) buckets['40-60%']++;
+      else if (c < 80) buckets['60-80%']++;
+      else buckets['80-100%']++;
+    }
+    return Object.entries(buckets).map(([bucket, count]) => ({ bucket, count }));
   }
 }
-

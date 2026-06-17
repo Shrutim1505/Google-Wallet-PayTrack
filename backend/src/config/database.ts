@@ -1,103 +1,123 @@
-import path from 'node:path';
-import sqlite3 from 'sqlite3';
-import { open } from 'sqlite';
+import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
+import { environment } from './environment.js';
+import { logger } from '../utils/logger.js';
 
-let db: any;
+const { Pool } = pg;
 
-export async function initializeDatabase() {
-  const sqliteFilename = process.env.SQLITE_FILENAME
-    ? path.resolve(process.cwd(), process.env.SQLITE_FILENAME)
-    : path.resolve(process.cwd(), 'paytrack.sqlite');
+let pool: pg.Pool;
 
-  db = await open({
-    filename: sqliteFilename,
-    driver: sqlite3.Database,
-  });
-
-  await db.exec(`PRAGMA foreign_keys = ON;`);
-
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      email TEXT UNIQUE NOT NULL,
-      name TEXT NOT NULL,
-      passwordhash TEXT NOT NULL,
-      currency TEXT DEFAULT 'INR',
-      timezone TEXT DEFAULT 'Asia/Kolkata',
-      preferences TEXT DEFAULT '{}',
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS user_settings (
-      userId TEXT PRIMARY KEY,
-      monthlyBudget REAL NOT NULL DEFAULT 50000,
-      notificationsEnabled INTEGER NOT NULL DEFAULT 1,
-      darkMode INTEGER NOT NULL DEFAULT 0,
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS receipts (
-      id TEXT PRIMARY KEY,
-      userId TEXT NOT NULL,
-      merchant TEXT NOT NULL,
-      amount REAL NOT NULL,
-      currency TEXT DEFAULT 'INR',
-      date TEXT NOT NULL,
-      category TEXT DEFAULT 'Other',
-      items TEXT DEFAULT '[]',
-      imageUrl TEXT DEFAULT '',
-      notes TEXT DEFAULT '',
-      tags TEXT DEFAULT '[]',
-      ocrData TEXT,
-      isManualEntry INTEGER DEFAULT 0,
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS budgets (
-      id TEXT PRIMARY KEY,
-      userId TEXT NOT NULL,
-      category TEXT NOT NULL,
-      amount REAL NOT NULL,
-      period TEXT DEFAULT 'monthly',
-      alertEnabled INTEGER DEFAULT 1,
-      alertThreshold INTEGER DEFAULT 80,
-      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
-    );
-  `);
-
-  const demoEmail = 'demo@example.com';
-  const demoPassword = 'password';
-  const demoName = 'Demo User';
-
-  const existingDemo = await db.get('SELECT id FROM users WHERE email = ?', [demoEmail]);
-  if (!existingDemo) {
-    const userId = uuidv4();
-    const passwordHash = await bcrypt.hash(demoPassword, 10);
-    await db.run(
-      `INSERT INTO users (id, email, name, passwordhash)
-       VALUES (?, ?, ?, ?)`,
-      [userId, demoEmail, demoName, passwordHash]
-    );
-
-    await db.run(
-      `INSERT INTO user_settings (userId, monthlyBudget, notificationsEnabled, darkMode)
-       VALUES (?, ?, ?, ?)`,
-      [userId, 50000, 1, 0]
-    );
-  }
-
-  return db;
+export function getPool(): pg.Pool {
+  if (!pool) throw new Error('Database not initialized — call initializeDatabase() first');
+  return pool;
 }
 
-export function getDatabase() {
-  return db;
+export async function initializeDatabase(): Promise<pg.Pool> {
+  pool = new Pool({
+    connectionString: environment.DATABASE_URL,
+    max: environment.DB_POOL_MAX,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+  });
+
+  // Verify connection with retry logic
+  let retries = 5;
+  while (retries > 0) {
+    try {
+      const client = await pool.connect();
+      await client.query('SELECT NOW()');
+      client.release();
+      logger.info('PostgreSQL connected');
+      break;
+    } catch (err) {
+      retries--;
+      if (retries === 0) throw err;
+      logger.warn({ msg: 'Database connection failed, retrying...', retries, err: (err as Error).message });
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  }
+
+  // Check if schema exists (migrations should have run by now)
+  await ensureSchemaExists();
+  await seedDemoUser();
+
+  return pool;
+}
+
+async function ensureSchemaExists() {
+  const { rows } = await pool.query(`
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_name = 'users'
+    ) as exists
+  `);
+
+  if (!rows[0].exists) {
+    if (environment.NODE_ENV === 'production') {
+      throw new Error('Schema not found. Run migrations first: npm run migrate');
+    }
+    // Auto-run migrations in dev/test
+    logger.info('Schema not found, running migrations automatically (dev mode)...');
+    const { runner } = await import('node-pg-migrate');
+    await runner({
+      databaseUrl: environment.DATABASE_URL,
+      dir: 'migrations',
+      direction: 'up',
+      migrationsTable: 'pgmigrations',
+      log: () => {},
+    });
+    logger.info('Migrations complete');
+  }
+}
+
+async function seedDemoUser() {
+  const demoEmail = 'demo@example.com';
+  const { rows } = await pool.query('SELECT id FROM users WHERE email = $1', [demoEmail]);
+  if (rows.length > 0) return;
+
+  const userId = uuidv4();
+  const passwordHash = await bcrypt.hash('password', 12);
+
+  try {
+    await runTransaction(async (client) => {
+      await client.query(
+        `INSERT INTO users (id, email, name, password_hash, email_verified) VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (email) DO NOTHING`,
+        [userId, demoEmail, 'Demo User', passwordHash, true]
+      );
+      await client.query(
+        `INSERT INTO user_settings (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING`,
+        [userId]
+      );
+      await client.query(`
+        INSERT INTO user_roles (user_id, role_id)
+        SELECT $1, id FROM roles WHERE name = 'user'
+        ON CONFLICT DO NOTHING
+      `, [userId]);
+    });
+    logger.info('Demo user seeded');
+  } catch (err) {
+    // Benign if another process seeded concurrently
+    logger.debug({ msg: 'Demo user seed skipped', err: (err as Error).message });
+  }
+}
+
+export async function closeDatabase(): Promise<void> {
+  if (pool) await pool.end();
+}
+
+export async function runTransaction<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
