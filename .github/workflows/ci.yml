@@ -559,12 +559,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Download backend coverage
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: coverage-backend
           path: coverage-backend
       - name: Download frontend coverage
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: coverage-frontend
           path: coverage-frontend
@@ -621,7 +621,7 @@ jobs:
     if: always()
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: allure-inputs
           pattern: allure-*
