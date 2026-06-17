@@ -103,8 +103,102 @@ const definition = {
     { name: 'Budgets', description: 'Budget management' },
     { name: 'Analytics', description: 'Spending analytics' },
     { name: 'Settings', description: 'User settings' },
+    { name: 'AI', description: 'AI/ML: LLM receipt understanding, embedding categorization, forecasting, model evaluation, insights' },
     { name: 'Health', description: 'Service health checks' },
   ],
+  paths: {
+    '/ai-enhanced/status': {
+      get: {
+        tags: ['AI'], summary: 'AI feature flags',
+        security: [{ bearerAuth: [] }],
+        responses: { 200: { description: 'AI feature availability (llm, embeddings, forecasting, evaluation, insights)' }, 401: { $ref: '#/components/responses/Unauthorized' } },
+      },
+    },
+    '/ai-enhanced/categorize': {
+      post: {
+        tags: ['AI'], summary: 'Embedding-based categorization with Naive Bayes + rule-based fallback',
+        security: [{ bearerAuth: [] }],
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', properties: { merchant: { type: 'string' }, description: { type: 'string' } }, required: ['merchant'] } } } },
+        responses: { 200: { description: 'Predicted category with confidence, modelSource, and per-category scores' }, 401: { $ref: '#/components/responses/Unauthorized' } },
+      },
+    },
+    '/ai-enhanced/categorize/learn': {
+      post: {
+        tags: ['AI'], summary: 'Teach the model a labeled example (incremental training)',
+        security: [{ bearerAuth: [] }],
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', properties: { text: { type: 'string' }, category: { type: 'string' } }, required: ['text', 'category'] } } } },
+        responses: { 200: { description: 'Example learned' }, 401: { $ref: '#/components/responses/Unauthorized' } },
+      },
+    },
+    '/ai-enhanced/receipt/extract': {
+      post: {
+        tags: ['AI'], summary: 'LLM structured extraction from OCR text (Gemini)',
+        security: [{ bearerAuth: [] }],
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', properties: { ocrText: { type: 'string' } }, required: ['ocrText'] } } } },
+        responses: { 200: { description: 'Structured receipt JSON (merchant, total, tax, items, paymentMethod, confidence) or null if AI disabled' }, 401: { $ref: '#/components/responses/Unauthorized' } },
+      },
+    },
+    '/ai-enhanced/evaluate': {
+      post: {
+        tags: ['AI'], summary: 'Run model evaluation (precision, recall, F1, accuracy, confusion matrix)',
+        security: [{ bearerAuth: [] }],
+        requestBody: { content: { 'application/json': { schema: { type: 'object', properties: { modelName: { type: 'string' } } } } } },
+        responses: { 200: { description: 'Evaluation metrics with confusion matrix' }, 401: { $ref: '#/components/responses/Unauthorized' } },
+      },
+    },
+    '/ai-enhanced/evaluate/history': {
+      get: {
+        tags: ['AI'], summary: 'Historical model evaluation metrics',
+        security: [{ bearerAuth: [] }],
+        responses: { 200: { description: 'List of past evaluations' }, 401: { $ref: '#/components/responses/Unauthorized' } },
+      },
+    },
+    '/ai-enhanced/forecast': {
+      get: {
+        tags: ['AI'], summary: '7-day and 30-day spending forecast (exponential smoothing + confidence intervals)',
+        security: [{ bearerAuth: [] }],
+        responses: { 200: { description: 'Forecast with next7Days, next30Days, trend, MAPE, dailyAverage' }, 401: { $ref: '#/components/responses/Unauthorized' } },
+      },
+    },
+    '/ai-enhanced/insights': {
+      get: {
+        tags: ['AI'], summary: 'Recent AI-generated insights',
+        security: [{ bearerAuth: [] }],
+        responses: { 200: { description: 'List of insights (anomalies, category growth, budget risk, NL summaries)' }, 401: { $ref: '#/components/responses/Unauthorized' } },
+      },
+    },
+    '/ai-enhanced/insights/generate': {
+      post: {
+        tags: ['AI'], summary: 'Generate fresh AI insights',
+        security: [{ bearerAuth: [] }],
+        responses: { 200: { description: 'Newly generated insights' }, 401: { $ref: '#/components/responses/Unauthorized' } },
+      },
+    },
+    '/receipts/{id}/ai': {
+      get: {
+        tags: ['AI'], summary: 'AI metadata for a receipt (LLM extraction, OCR comparison, model source, discrepancies)',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+        responses: { 200: { description: 'AI metadata or null' }, 401: { $ref: '#/components/responses/Unauthorized' } },
+      },
+    },
+    '/receipts/{id}/correct-category': {
+      post: {
+        tags: ['AI'], summary: 'Correct a receipt category and retrain Naive Bayes + embedding models',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', properties: { category: { type: 'string' } }, required: ['category'] } } } },
+        responses: { 200: { description: 'Updated receipt; models retrained' }, 401: { $ref: '#/components/responses/Unauthorized' } },
+      },
+    },
+    '/analytics/charts': {
+      get: {
+        tags: ['Analytics'], summary: 'Aggregated chart data (top merchants, top categories, monthly trend, AI confidence distribution)',
+        security: [{ bearerAuth: [] }],
+        responses: { 200: { description: 'Chart datasets for the analytics dashboard' }, 401: { $ref: '#/components/responses/Unauthorized' } },
+      },
+    },
+  },
 };
 
 export const openapiSpec = swaggerJSDoc({

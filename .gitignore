@@ -9,6 +9,12 @@ dist-ssr
 *.local
 .env
 
+# Secrets / credentials (NEVER commit)
+backend/gcp-key.json
+*gcp*key*.json
+*service-account*.json
+*credentials*.json
+
 # Database
 *.sqlite
 *.sqlite-journal

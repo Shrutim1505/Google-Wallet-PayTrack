@@ -27,6 +27,28 @@ export function useReceipt(id: string | undefined) {
   });
 }
 
+export function useReceiptAIMetadata(id: string | undefined) {
+  return useQuery({
+    queryKey: [...receiptKeys.detail(id!), 'ai'],
+    queryFn: () => receiptsApi.getAIMetadata(id!),
+    enabled: !!id,
+  });
+}
+
+export function useCorrectCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, category }: { id: string; category: string }) =>
+      receiptsApi.correctCategory(id, category),
+    onSuccess: (updated) => {
+      qc.invalidateQueries({ queryKey: receiptKeys.lists() });
+      qc.invalidateQueries({ queryKey: receiptKeys.detail(updated.id) });
+      toast.success('Category corrected — model retrained');
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to correct category'),
+  });
+}
+
 export function useCreateReceipt() {
   const qc = useQueryClient();
   return useMutation({

@@ -27,3 +27,19 @@ export const getAnalytics = asyncHandler(async (req: Request, res: Response) => 
   });
 });
 
+/** GET /api/analytics/charts — aggregated data for dashboard charts */
+export const getChartData = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.userId!;
+  const [topMerchants, topCategories, monthlyTrend, confidenceDistribution] = await Promise.all([
+    analyticsService.getTopMerchants(userId, 8),
+    analyticsService.getTopCategories(userId, 8),
+    analyticsService.getMonthlyTrend(userId, 6),
+    analyticsService.getConfidenceDistribution(userId),
+  ]);
+
+  res.status(HTTP_STATUS.OK).json({
+    success: true,
+    data: { topMerchants, topCategories, monthlyTrend, confidenceDistribution },
+  });
+});
+

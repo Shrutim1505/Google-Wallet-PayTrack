@@ -27,7 +27,7 @@ export class RecurringService {
     for (const r of receipts) {
       const key = r.merchant.toLowerCase().trim();
       if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push({ merchant: r.merchant, amount: r.amount, category: r.category, date: r.date });
+      groups.get(key)!.push({ merchant: r.merchant, amount: parseFloat(r.amount), category: r.category, date: r.date });
     }
 
     const patterns: RecurringPattern[] = [];

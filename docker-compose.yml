@@ -50,6 +50,12 @@ services:
       FRONTEND_URL: http://localhost:5173
       ALLOWED_ORIGINS: http://localhost:5173
       LOG_LEVEL: info
+      # AI / ML (local embeddings need no key; Groq LLM + Vision + Wallet optional)
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_CLOUD_PROJECT_ID: ${GOOGLE_CLOUD_PROJECT_ID:-}
+      GOOGLE_CLOUD_KEY_FILE: ${GOOGLE_CLOUD_KEY_FILE:-}
+      GOOGLE_WALLET_ISSUER_ID: ${GOOGLE_WALLET_ISSUER_ID:-}
     ports:
       - "5000:5000"
     volumes:

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, Link } from 'react-router-dom';
 import { Wallet } from 'lucide-react';
 import { Button, Input } from '@/shared/ui';
 import { useLogin, useRegister } from '@/features/auth/hooks';
@@ -103,6 +103,14 @@ export function LoginPage() {
               {isRegister ? 'Create Account' : 'Sign In'}
             </Button>
           </form>
+
+          {!isRegister && (
+            <div className="mt-3 text-center">
+              <Link to="/forgot-password" className="text-sm text-blue-600 hover:text-blue-700">
+                Forgot password?
+              </Link>
+            </div>
+          )}
 
           <button
             type="button"

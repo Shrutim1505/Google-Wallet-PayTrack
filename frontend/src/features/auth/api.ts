@@ -36,7 +36,9 @@ export const authApi = {
     handle<void>(apiClient.post('/auth/change-password', { currentPassword, newPassword })),
 
   requestPasswordReset: (email: string) =>
-    handle<{ success: boolean }>(apiClient.post('/auth/password-reset/request', { email })),
+    handle<{ success: boolean; message: string; _dev_token?: string }>(
+      apiClient.post('/auth/password-reset/request', { email })
+    ),
 
   confirmPasswordReset: (token: string, newPassword: string) =>
     handle<{ success: boolean }>(apiClient.post('/auth/password-reset/confirm', { token, newPassword })),

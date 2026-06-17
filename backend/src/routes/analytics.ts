@@ -7,5 +7,6 @@ router.use(authMiddleware);
 
 router.get('/', analyticsController.getAnalytics);
 router.get('/summary', analyticsController.getAnalytics);
+router.get('/charts', analyticsController.getChartData);
 
 export default router;

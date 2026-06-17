@@ -20,10 +20,10 @@ export const syncReceipt = asyncHandler(async (req: Request, res: Response) => {
   let items: Array<{ name: string; price: number; quantity: number }> = [];
   try { items = typeof receipt.items === 'string' ? JSON.parse(receipt.items) : receipt.items || []; } catch { /* empty */ }
 
-  const result = await walletService.syncReceiptToWallet({
+  const result = await walletService.syncReceiptToWallet(userId, {
     receiptId: receipt.id,
     merchant: receipt.merchant,
-    amount: receipt.amount,
+    amount: parseFloat(receipt.amount),
     currency: receipt.currency || 'INR',
     date: receipt.date,
     items,

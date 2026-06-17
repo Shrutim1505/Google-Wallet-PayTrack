@@ -38,6 +38,11 @@ async function start() {
         docs: `http://localhost:${environment.PORT}/api/docs`,
         metrics: `http://localhost:${environment.PORT}/metrics`,
       });
+
+      // Warm up the local embedding model in the background (non-blocking)
+      import('./services/localEmbeddingService.js')
+        .then(({ warmupEmbeddingModel }) => warmupEmbeddingModel())
+        .catch(() => { /* non-fatal */ });
     });
 
     const shutdown = async (signal: string) => {

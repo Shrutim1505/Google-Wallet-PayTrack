@@ -24,6 +24,7 @@ import budgetRoutes from './routes/budgets.js';
 import aiRoutes from './routes/ai.js';
 import walletRoutes from './routes/wallet.js';
 import featureRoutes from './routes/features.js';
+import aiEnhancedRoutes from './routes/aiEnhanced.js';
 
 const BODY_LIMIT = '1mb';
 const CORS_MAX_AGE_SECONDS = 86400;
@@ -92,6 +93,7 @@ v1Router.use('/budgets', budgetRoutes);
 v1Router.use('/ai', aiRoutes);
 v1Router.use('/wallet', walletRoutes);
 v1Router.use('/features', featureRoutes);
+v1Router.use('/ai-enhanced', aiEnhancedRoutes);
 app.use('/api/v1', v1Router);
 
 app.use('/api/auth', authRoutes);
@@ -100,6 +102,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/budgets', budgetRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/ai-enhanced', aiEnhancedRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/features', featureRoutes);
 

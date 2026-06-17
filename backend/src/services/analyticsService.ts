@@ -102,4 +102,38 @@ export class AnalyticsService {
       date: r.date instanceof Date ? r.date.toISOString().split('T')[0] : String(r.date),
     }));
   }
+
+  /** Monthly spending trend over the last N months */
+  async getMonthlyTrend(userId: string, months = 6): Promise<Array<{ month: string; total: number; count: number }>> {
+    const { rows } = await getPool().query(
+      `SELECT to_char(date_trunc('month', date), 'YYYY-MM') as month,
+              SUM(amount)::numeric as total, COUNT(*)::int as count
+       FROM receipts WHERE user_id = $1 AND deleted_at IS NULL
+         AND date >= date_trunc('month', NOW()) - INTERVAL '${months} months'
+       GROUP BY 1 ORDER BY 1`,
+      [userId]
+    );
+    return rows.map(r => ({ month: r.month, total: Math.round(parseFloat(r.total)), count: r.count }));
+  }
+
+  /** AI confidence distribution buckets from receipt metadata */
+  async getConfidenceDistribution(userId: string): Promise<Array<{ bucket: string; count: number }>> {
+    const { rows } = await getPool().query(
+      `SELECT category_confidence as conf FROM receipt_ai_metadata m
+       JOIN receipts r ON r.id = m.receipt_id
+       WHERE r.user_id = $1 AND m.category_confidence IS NOT NULL`,
+      [userId]
+    );
+
+    const buckets = { '0-20%': 0, '20-40%': 0, '40-60%': 0, '60-80%': 0, '80-100%': 0 };
+    for (const row of rows) {
+      const c = parseFloat(row.conf) * 100;
+      if (c < 20) buckets['0-20%']++;
+      else if (c < 40) buckets['20-40%']++;
+      else if (c < 60) buckets['40-60%']++;
+      else if (c < 80) buckets['60-80%']++;
+      else buckets['80-100%']++;
+    }
+    return Object.entries(buckets).map(([bucket, count]) => ({ bucket, count }));
+  }
 }

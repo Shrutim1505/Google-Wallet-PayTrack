@@ -1,13 +1,16 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { LayoutDashboard, Receipt as ReceiptIcon, BarChart3, Wallet, Users, RefreshCw, Settings, LogOut } from 'lucide-react';
+import { LayoutDashboard, Receipt as ReceiptIcon, BarChart3, Wallet, Users, RefreshCw, Settings, LogOut, Brain, Target } from 'lucide-react';
 import { useAuth, useLogout } from '@/features/auth/hooks';
 import { Button } from '@/shared/ui';
 import { cn } from '@/shared/lib/cn';
+import { NotificationBell } from '@/components/common/NotificationBell';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/receipts', label: 'Receipts', icon: ReceiptIcon },
   { to: '/analytics', label: 'Analytics', icon: BarChart3 },
+  { to: '/budgets', label: 'Budgets', icon: Target },
+  { to: '/ai', label: 'AI', icon: Brain },
   { to: '/recurring', label: 'Recurring', icon: RefreshCw },
   { to: '/splits', label: 'Splits', icon: Users },
   { to: '/wallet', label: 'Wallet', icon: Wallet },
@@ -39,6 +42,7 @@ export function AppLayout() {
                 <p className="text-xs text-gray-500">{user.email}</p>
               </div>
             )}
+            <NotificationBell />
             <NavLink
               to="/settings"
               className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 transition"

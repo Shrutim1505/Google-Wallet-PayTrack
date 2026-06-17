@@ -27,9 +27,9 @@ const DATE_PATTERNS = [
 ];
 
 const AMOUNT_PATTERNS = [
-  /(?:total|grand\s*total|amount\s*due|balance\s*due)[:\s]*[₹$€£]?\s*([\d,]+\.?\d*)/i,
-  /[₹$€£]\s*([\d,]+\.\d{2})/,
-  /(?:total)[:\s]*([\d,]+\.?\d*)/i,
+  /(?:grand\s*total|net\s*total|amount\s*due|balance\s*due|total\s*amount)[:\s]*[₹$€£Rs.]*\s*([\d,]+\.?\d*)/i,
+  /(?:^|\n)\s*TOTAL[:\s]*[₹$€£Rs.]*\s*([\d,]+\.?\d*)/im,
+  /[₹$€£]|Rs\.?\s*([\d,]+\.\d{2})/,
 ];
 
 const ITEM_PATTERN = /^\s*[-•*]?\s*(.+?)\s+[₹$€£]?\s*(\d[\d,]*\.?\d*)\s*$/;
@@ -150,11 +150,15 @@ export class OCRService {
   }
 
   private extractTotal(text: string, items: ReceiptItem[]): number {
+    let maxTotal = 0;
     for (const pattern of AMOUNT_PATTERNS) {
-      const match = text.match(pattern);
-      if (match) return parseFloat(match[1].replace(/,/g, ''));
+      const matches = text.matchAll(new RegExp(pattern, 'gi'));
+      for (const match of matches) {
+        const val = parseFloat((match[1] || '').replace(/,/g, ''));
+        if (val > maxTotal) maxTotal = val;
+      }
     }
-    return items.reduce((s, i) => s + i.price * i.quantity, 0);
+    return maxTotal || items.reduce((s, i) => s + i.price * i.quantity, 0);
   }
 
   private extractItems(text: string): ReceiptItem[] {

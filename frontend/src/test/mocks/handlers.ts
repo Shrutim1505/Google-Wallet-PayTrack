@@ -226,6 +226,79 @@ export const handlers = [
   http.get('*/health/live', () =>
     HttpResponse.json({ status: 'alive', uptime: 1, timestamp: new Date().toISOString() })
   ),
+
+  // -----------------------------------------------------------------------
+  //  Budgets
+  // -----------------------------------------------------------------------
+  http.get(`${BASE}/budgets/status`, () =>
+    ok([
+      { id: 'b1', category: 'Food', budgetAmount: 8000, spent: 6313, percentage: 79, period: 'monthly', alertEnabled: true, alertThreshold: 80, isOverBudget: false, isNearThreshold: false },
+      { id: 'b2', category: 'Transport', budgetAmount: 3000, spent: 3200, percentage: 107, period: 'monthly', alertEnabled: true, alertThreshold: 80, isOverBudget: true, isNearThreshold: false },
+    ])
+  ),
+  http.post(`${BASE}/budgets`, async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    if (!body.category || !body.amount) return problem(400, 'BAD_REQUEST', 'category and amount required');
+    return created({ id: 'new-budget', ...body }, 'Budget created');
+  }),
+  http.delete(`${BASE}/budgets/:id`, () => ok(null, 'Budget deleted')),
+
+  // -----------------------------------------------------------------------
+  //  Settings
+  // -----------------------------------------------------------------------
+  http.get(`${BASE}/settings`, () =>
+    ok({ settings: { name: 'Demo User', email: 'demo@example.com', monthlyBudget: 50000, notificationsEnabled: true, darkMode: false } })
+  ),
+  http.put(`${BASE}/settings`, async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    return ok({ settings: { name: 'Demo User', email: 'demo@example.com', monthlyBudget: 50000, notificationsEnabled: true, darkMode: false, ...body } }, 'Settings updated successfully');
+  }),
+
+  // -----------------------------------------------------------------------
+  //  Currency
+  // -----------------------------------------------------------------------
+  http.post(`${BASE}/features/currency/convert`, async ({ request }) => {
+    const body = (await request.json()) as { amount: number; from: string; to: string };
+    const rate = body.from === body.to ? 1 : 94.6;
+    return ok({ converted: Math.round(body.amount * rate * 100) / 100, rate });
+  }),
+
+  // -----------------------------------------------------------------------
+  //  Smart Alerts
+  // -----------------------------------------------------------------------
+  http.get(`${BASE}/features/alerts`, () =>
+    ok({
+      alerts: [
+        { id: 'a1', type: 'spending_spike', message: 'You spent 457% more on Food this week', severity: 'critical', data: {}, isRead: false, createdAt: new Date().toISOString() },
+        { id: 'a2', type: 'budget_warning', message: 'Budget alert: 79% used this month', severity: 'warning', data: {}, isRead: true, createdAt: new Date().toISOString() },
+      ],
+      unreadCount: 1,
+    })
+  ),
+  http.post(`${BASE}/features/alerts/read`, () => ok(null, 'Alerts marked as read')),
+
+  // -----------------------------------------------------------------------
+  //  Receipt AI metadata + category correction
+  // -----------------------------------------------------------------------
+  http.get(`${BASE}/receipts/:id/ai`, () =>
+    ok({
+      llmExtracted: null,
+      ocrExtracted: { vendor: 'Cafe Mocha', amount: 1113, date: '2026-06-17', items: [] },
+      discrepancies: {},
+      predictedCategory: 'Food',
+      confidence: 0.43,
+      modelSource: 'naive_bayes',
+      embeddingScore: 0,
+      fallbackReason: 'embedding confidence 0 < 0.6',
+      createdAt: new Date().toISOString(),
+    })
+  ),
+  http.post(`${BASE}/receipts/:id/correct-category`, async ({ params, request }) => {
+    const body = (await request.json()) as { category: string };
+    const found = receiptDB.findById(params.id as string);
+    const base = found || makeReceipt({ merchant: 'X', amount: 1 });
+    return ok({ ...base, category: body.category }, 'Category corrected and model retrained');
+  }),
 ];
 
 /** Convenience seeders so tests can pre-populate data. */

@@ -1,8 +1,62 @@
-# PayTrack — Smart Receipt Management System
+# PayTrack — AI-Powered Smart Receipt Management System
 
-Production-grade receipt management and personal finance tracking platform. OCR-based receipt parsing, real-time notifications, RBAC, observability — built to scale.
+Production-grade receipt management and personal finance platform with a full **AI/ML layer**: LLM receipt understanding (Gemini), embedding-based semantic categorization, model evaluation, time-series forecasting, and intelligent insights — on top of OCR, RBAC, and observability.
 
 [![CI](https://github.com/Shrutim1505/Google-Wallet-PayTrack/actions/workflows/ci.yml/badge.svg)](https://github.com/Shrutim1505/Google-Wallet-PayTrack/actions)
+
+---
+
+## 🧠 AI / ML Capabilities
+
+PayTrack runs a **hybrid receipt-understanding pipeline** with graceful degradation:
+
+```
+Receipt Upload
+  → Google Vision OCR          (text extraction)
+  → Groq LLM (Llama 3.3 70B)   (structured JSON: merchant, total, tax, items, payment method, intent)
+  → Local Embeddings           (all-MiniLM-L6-v2 in-process + cosine similarity vs category prototypes)
+  → Naive Bayes Classifier     (fallback when embedding confidence < 0.35)
+  → Rule-Based Classifier      (final fallback, always succeeds)
+  → Persist AI Metadata        (model source, confidence, OCR-vs-LLM discrepancies, fallback reason)
+```
+
+| Capability | Implementation |
+|------------|----------------|
+| **LLM Receipt Understanding** | Groq Llama 3.3 70B extracts structured JSON from OCR text with schema validation and regex-parser fallback. Logs OCR-vs-LLM discrepancies. |
+| **Embedding Categorization** | **Local `all-MiniLM-L6-v2`** (Transformers.js, runs in-process — no API key, no quota, no cost), cosine similarity against per-user category prototypes, learns from corrections. |
+| **Hybrid Classifier Chain** | Embedding → Naive Bayes → Rule-based, with confidence thresholds and recorded `model_source` + `fallback_reason`. |
+| **Model Evaluation** | Precision, Recall, F1, Accuracy, and Confusion Matrix computed from user-corrected ground truth; history persisted. |
+| **Forecasting** | Holt's exponential smoothing + moving average, 7-day & 30-day forecasts with confidence intervals and MAPE backtest. |
+| **AI Insights** | Z-score anomaly detection, category-growth analysis, budget-risk projection, plus Groq natural-language summaries. |
+| **Continuous Learning** | "Correct Category" action retrains Naive Bayes and the embedding model incrementally. |
+
+### AI API Endpoints (`/api/v1/ai-enhanced/`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/status` | AI feature flags |
+| POST | `/categorize` | Embedding-based categorization |
+| POST | `/categorize/learn` | Teach a new labeled example |
+| POST | `/receipt/extract` | LLM structured extraction from OCR text |
+| POST | `/evaluate` | Run model evaluation (P/R/F1/confusion matrix) |
+| GET | `/evaluate/history` | Historical evaluation metrics |
+| GET | `/forecast` | 7/30-day spending forecast |
+| GET | `/insights` | Recent AI insights |
+| POST | `/insights/generate` | Generate fresh insights |
+
+Receipt routes also expose `GET /receipts/:id/ai` (AI metadata) and `POST /receipts/:id/correct-category` (correction + retraining).
+
+### Environment Variables for AI
+
+```bash
+# backend/.env.local
+GOOGLE_CLOUD_PROJECT_ID=<your-gcp-project>     # Vision OCR (optional)
+GOOGLE_CLOUD_KEY_FILE=./gcp-key.json           # Vision OCR service account (optional)
+GROQ_API_KEY=<your-groq-key>                   # LLM — free, no credit card (https://console.groq.com/keys)
+GOOGLE_WALLET_ISSUER_ID=<your-issuer-id>       # Google Wallet passes (optional)
+```
+
+**Embeddings run locally** (`all-MiniLM-L6-v2` via Transformers.js) — no key, no quota, no cost; the model is downloaded once (~90MB) and cached. All AI features are **feature-flagged**: without `GROQ_API_KEY`, the LLM stage is skipped and the pipeline uses local embeddings → Naive Bayes → rule-based. Forecasting and evaluation (pure math) always work.
 
 ---
 
@@ -151,9 +205,9 @@ npm run dev
 
 **Backend:** Node.js 20 · TypeScript · Express · PostgreSQL 16 · Redis 7 · BullMQ · Socket.IO · Pino · Sentry · Prometheus · Joi · Zod · Jest/Vitest
 
-**Frontend:** React 18 · TypeScript · Vite 5 · Tailwind CSS · Axios · React Hot Toast
+**Frontend:** React 18 · TypeScript · Vite 5 · Tailwind CSS · TanStack Query · Recharts · Axios · React Hot Toast
 
-**OCR:** Google Cloud Vision API
+**AI / ML:** Groq Llama 3.3 70B (LLM) · `all-MiniLM-L6-v2` local embeddings (Transformers.js) · Google Cloud Vision (OCR) · Naive Bayes · Cosine Similarity · Holt's Exponential Smoothing
 
 **Infra:** Docker · GitHub Actions · Nginx
 

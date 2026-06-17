@@ -23,6 +23,12 @@ export const receiptsApi = {
 
   get: (id: string) => handle<Receipt>(apiClient.get(`/receipts/${id}`)),
 
+  getAIMetadata: (id: string) =>
+    handle<import('./types').ReceiptAIMetadata | null>(apiClient.get(`/receipts/${id}/ai`)),
+
+  correctCategory: (id: string, category: string) =>
+    handle<Receipt>(apiClient.post(`/receipts/${id}/correct-category`, { category })),
+
   create: (input: CreateReceiptInput) =>
     handle<Receipt>(
       apiClient.post('/receipts', input, {

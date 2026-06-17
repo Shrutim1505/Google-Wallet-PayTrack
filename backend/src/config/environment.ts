@@ -37,6 +37,12 @@ const envSchema = z.object({
   // Google Wallet (optional)
   GOOGLE_WALLET_ISSUER_ID: z.string().optional(),
 
+  // Google Gemini AI (optional, legacy)
+  GEMINI_API_KEY: z.string().optional(),
+
+  // Groq LLM (optional, free tier — https://console.groq.com/keys)
+  GROQ_API_KEY: z.string().optional(),
+
   // Observability
   SENTRY_DSN: z.string().optional(),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),

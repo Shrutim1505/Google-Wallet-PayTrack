@@ -2,6 +2,11 @@ import { Request, Response } from 'express';
 import { ReceiptService, ReceiptFilters } from '../services/receiptService.js';
 import { CategorizationService } from '../services/categorizationService.js';
 import { OCRService } from '../services/ocrService.js';
+import { AIPipelineService } from '../services/aiPipelineService.js';
+import { MLService } from '../services/mlService.js';
+import { EmbeddingCategorizationService } from '../services/embeddingCategorizationService.js';
+import { SmartAlertService } from '../services/smartAlertService.js';
+import { isAIEnabled } from '../services/geminiClient.js';
 import { merchantAutocomplete as merchantAutocompleteService } from '../services/merchantAutocompleteService.js';
 import { duplicateBloomFilter } from '../services/duplicateBloomService.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -13,6 +18,11 @@ import { HTTP_STATUS, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../utils/constant
 const receiptService = new ReceiptService();
 const categorizationService = new CategorizationService();
 const ocrService = new OCRService();
+const aiPipeline = new AIPipelineService();
+const mlService = new MLService();
+const embeddingService = new EmbeddingCategorizationService();
+const smartAlertService = new SmartAlertService();
+const isAIEnabledForController = () => isAIEnabled();
 
 function parseJsonArray(value: unknown): any[] {
   if (!value) return [];
@@ -75,6 +85,10 @@ export const createReceipt = asyncHandler(async (req: Request, res: Response) =>
   merchantAutocompleteService.recordMerchant(userId, finalMerchant);
   duplicateBloomFilter.add(userId, finalMerchant, finalAmount, receipt.date);
 
+  // Trigger smart alert analysis (spending spikes, budget warnings) — non-blocking
+  smartAlertService.analyzeNewReceipt(userId, finalMerchant, finalAmount, receipt.category)
+    .catch((e) => logger.warn({ msg: 'Smart alert analysis failed', error: e.message }));
+
   logger.info({ msg: 'Receipt created', userId, receiptId: receipt.id });
   emitToUser(userId, 'receipt:created', { receipt: toFrontendReceipt(receipt) });
 
@@ -85,38 +99,61 @@ export const createReceipt = asyncHandler(async (req: Request, res: Response) =>
   });
 });
 
-/** POST /api/receipts/upload */
+/** POST /api/receipts/upload — OCR → LLM → Embedding → NB → Rule pipeline */
 export const uploadReceipt = asyncHandler(async (req: Request, res: Response) => {
   const userId = req.userId!;
   const file = req.file;
 
   if (!file) throw new AppError(HTTP_STATUS.BAD_REQUEST, 'File upload is required');
 
-  const extracted = await ocrService.extractReceiptData(file.path, file.mimetype);
-  const merchant = extracted.vendor;
-  const finalCategory = req.body.category || categorizationService.categorizeReceipt(merchant);
+  // Run the full AI pipeline: OCR → Gemini LLM → Embedding → Naive Bayes → Rule-based
+  const pipeline = await aiPipeline.processReceiptImage(userId, file.path, file.mimetype);
+
+  // Allow explicit category override from the request body
+  const finalCategory = req.body.category || pipeline.category;
 
   const receipt = await receiptService.createReceipt(userId, {
-    merchant,
-    amount: extracted.amount,
-    date: extracted.date instanceof Date
-      ? extracted.date.toISOString().split('T')[0]
-      : new Date(extracted.date).toISOString().split('T')[0],
+    merchant: pipeline.merchant,
+    amount: pipeline.amount,
+    date: pipeline.date,
     category: finalCategory,
-    items: extracted.items,
+    items: pipeline.items,
     imageUrl: `/uploads/${file.filename}`,
     notes: req.body.notes || '',
     isManualEntry: false,
     tags: [],
-    currency: 'INR',
+    currency: pipeline.currency,
   });
 
-  logger.info({ msg: 'Receipt uploaded', userId, receiptId: receipt.id });
+  // Persist AI metadata (LLM extraction, OCR comparison, embedding, confidence, fallback reason)
+  await aiPipeline.persistMetadata(receipt.id, pipeline);
+
+  // Update in-memory data structures
+  merchantAutocompleteService.recordMerchant(userId, pipeline.merchant);
+  duplicateBloomFilter.add(userId, pipeline.merchant, pipeline.amount, receipt.date);
+
+  // Trigger smart alert analysis — non-blocking
+  smartAlertService.analyzeNewReceipt(userId, pipeline.merchant, pipeline.amount, finalCategory)
+    .catch((e) => logger.warn({ msg: 'Smart alert analysis failed', error: e.message }));
+
+  logger.info({ msg: 'Receipt uploaded with AI pipeline', userId, receiptId: receipt.id, modelSource: pipeline.aiModelSource });
   emitToUser(userId, 'receipt:created', { receipt: toFrontendReceipt(receipt) });
 
   res.status(HTTP_STATUS.CREATED).json({
     success: true,
-    data: toFrontendReceipt(receipt),
+    data: {
+      ...toFrontendReceipt(receipt),
+      ai: {
+        category: pipeline.aiCategory,
+        confidence: pipeline.aiConfidence,
+        modelSource: pipeline.aiModelSource,
+        embeddingScore: pipeline.embeddingScore,
+        fallbackReason: pipeline.fallbackReason,
+        discrepancies: pipeline.discrepancies,
+        llmExtracted: pipeline.llmExtracted,
+        ocrExtracted: pipeline.ocrExtracted,
+      },
+    },
     message: 'Receipt processed successfully',
   });
 });
@@ -182,6 +219,37 @@ export const getReceipt = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
+/** GET /api/receipts/:id/ai — AI metadata (LLM extraction, OCR comparison, confidence, model source) */
+export const getReceiptAIMetadata = asyncHandler(async (req: Request, res: Response) => {
+  const { getPool } = await import('../config/database.js');
+  const { rows } = await getPool().query(
+    `SELECT llm_extracted, ocr_extracted, discrepancies, predicted_category,
+            category_confidence, category_model_source, embedding_score, fallback_reason, created_at
+     FROM receipt_ai_metadata WHERE receipt_id = $1`,
+    [req.params.id]
+  );
+
+  if (rows.length === 0) {
+    return res.status(HTTP_STATUS.OK).json({ success: true, data: null, message: 'No AI metadata' });
+  }
+
+  const m = rows[0];
+  res.status(HTTP_STATUS.OK).json({
+    success: true,
+    data: {
+      llmExtracted: m.llm_extracted,
+      ocrExtracted: m.ocr_extracted,
+      discrepancies: m.discrepancies || {},
+      predictedCategory: m.predicted_category,
+      confidence: m.category_confidence != null ? parseFloat(m.category_confidence) : null,
+      modelSource: m.category_model_source,
+      embeddingScore: m.embedding_score != null ? parseFloat(m.embedding_score) : null,
+      fallbackReason: m.fallback_reason,
+      createdAt: m.created_at,
+    },
+  });
+});
+
 /** PUT /api/receipts/:id */
 export const updateReceipt = asyncHandler(async (req: Request, res: Response) => {
   const receipt = await receiptService.updateReceipt(req.userId!, req.params.id, req.body);
@@ -193,6 +261,50 @@ export const updateReceipt = asyncHandler(async (req: Request, res: Response) =>
     success: true,
     data: toFrontendReceipt(receipt),
     message: 'Receipt updated successfully',
+  });
+});
+
+/** POST /api/receipts/:id/correct-category — correct category and retrain the model */
+export const correctCategory = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.userId!;
+  const receiptId = req.params.id;
+  const { category } = req.body;
+
+  if (!category) throw new AppError(HTTP_STATUS.BAD_REQUEST, 'category is required');
+
+  const receipt = await receiptService.getReceiptById(userId, receiptId);
+  const originalCategory = receipt.category;
+
+  // Update the receipt category
+  const updated = await receiptService.updateReceipt(userId, receiptId, { category });
+
+  const { getPool } = await import('../config/database.js');
+  const pool = getPool();
+
+  // Record the original prediction vs correction
+  await pool.query(
+    `UPDATE receipt_ai_metadata SET discrepancies = jsonb_set(
+       COALESCE(discrepancies, '{}'::jsonb), '{correction}',
+       $2::jsonb, true)
+     WHERE receipt_id = $1`,
+    [receiptId, JSON.stringify({ originalPrediction: originalCategory, correctedCategory: category, correctionTimestamp: new Date().toISOString() })]
+  );
+
+  // Feed correction into Naive Bayes training pipeline
+  const items = parseJsonArray(receipt.items);
+  await mlService.train(userId, receipt.merchant, items.map((i: any) => i.name || ''), category);
+
+  // Also teach the embedding model
+  if (isAIEnabledForController()) {
+    await embeddingService.learnExample(userId, `${receipt.merchant} ${items.map((i: any) => i.name).join(' ')}`, category);
+  }
+
+  logger.info({ msg: 'Category corrected & model retrained', userId, receiptId, from: originalCategory, to: category });
+
+  res.status(HTTP_STATUS.OK).json({
+    success: true,
+    data: toFrontendReceipt(updated),
+    message: 'Category corrected and model retrained',
   });
 });
 

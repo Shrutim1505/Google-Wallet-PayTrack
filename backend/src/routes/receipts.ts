@@ -32,7 +32,9 @@ router.get('/autocomplete', requirePermission('receipts:read'), receiptControlle
 router.get('/export', requirePermission('receipts:read'), receiptController.exportReceipts);
 router.get('/', requirePermission('receipts:read'), receiptController.getReceipts);
 router.get('/:id', requirePermission('receipts:read'), receiptController.getReceipt);
+router.get('/:id/ai', requirePermission('receipts:read'), receiptController.getReceiptAIMetadata);
 router.put('/:id', requirePermission('receipts:update'), validateRequest(schemas.updateReceipt, 'body'), receiptController.updateReceipt);
+router.post('/:id/correct-category', requirePermission('receipts:update'), receiptController.correctCategory);
 router.delete('/:id', requirePermission('receipts:delete'), receiptController.deleteReceipt);
 
 export default router;
