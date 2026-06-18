@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.6
 
 # ---------- Build stage ----------
-FROM node:20-alpine AS builder
+FROM node:26-alpine AS builder
 
 WORKDIR /app
 
@@ -21,7 +21,7 @@ RUN npm run build
 RUN npm prune --production
 
 # ---------- Runtime stage ----------
-FROM node:20-alpine
+FROM node:26-alpine
 
 # tini handles PID 1 signals correctly (proper SIGTERM propagation)
 RUN apk add --no-cache tini curl
